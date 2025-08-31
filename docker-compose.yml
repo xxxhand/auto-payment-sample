@@ -1,0 +1,40 @@
+services:
+  # mongodb:
+  #   image: mongo:6.0.11
+  #   container_name: mongodb
+  #   # command: ["--auth"]
+  #   volumes:
+  #     # - mongodata:/data/db
+  #     ## 要先在電腦建立對應的資料夾
+  #     - ~/Documents/docker-data/mongo/data/configdb:/data/configdb
+  #     - ~/Documents/docker-data/mongo/data/db:/data/db
+  #   networks:
+  #     - default
+  #   restart: always
+  #   ports:
+  #     - "27017:27017"
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - IMAGE_ID=${IMAGE_ID}
+    image: ${IMAGE_ID}:${IMAGE_TAG}
+    container_name: ${IMAGE_ID}
+    volumes:
+      - ~/Documents/docker-data/${IMAGE_ID}/log:/var/log/${IMAGE_ID}/log
+    # depends_on:
+    #   - mongodb
+    env_file:
+      - .env
+    networks:
+      - default
+    ports:
+      - "3000:3000"
+    # command: yarn start:prod
+    restart: always
+networks:
+    ## 要先用docker network create一個共用網路
+  default:
+    external: true
+    name: docker-data_default

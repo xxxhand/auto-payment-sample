@@ -1,0 +1,5 @@
+{
+    "ERR_CLIENT_NAME_EMPTY": "客戶端名稱為空",
+    "ERR_CLIENT_CALLBACK_URL_EMPTY": "客戶端回呼地址為空",
+    "ERR_CLIENT_DUPLICATED": "客戶端名稱重複"
+}

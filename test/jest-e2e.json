@@ -1,0 +1,21 @@
+{
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "ts"
+  ],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testTimeout": 60000,
+  "testRegex": ".e2e-spec.ts$",
+  "transform": {
+    "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "globalSetup": "<rootDir>/../test/__helpers__/e2e-global-setup.ts",
+  "moduleNameMapper": {
+    "@myapp/common/(.*)": "<rootDir>/../libs/common/src/$1",
+    "@myapp/common": "<rootDir>/../libs/common/src",
+    "@myapp/conf/(.*)": "<rootDir>/../libs/conf/src/$1",
+    "@myapp/conf": "<rootDir>/../libs/conf/src"
+  }
+}

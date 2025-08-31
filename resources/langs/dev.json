@@ -1,0 +1,5 @@
+{
+    "ERR_CLIENT_NAME_EMPTY": "Client name is empty",
+    "ERR_CLIENT_CALLBACK_URL_EMPTY": "Client callback url is empty",
+    "ERR_CLIENT_DUPLICATED": "Client duplicated"
+}
