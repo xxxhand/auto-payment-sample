@@ -87,6 +87,19 @@ export class DailyBillingJob {
       });
     }
   }
+
+  private async findDueSubscriptions(targetDate: Date, batchSize: number, offset: number): Promise<Subscription[]> {
+    // 使用日期計算演算法確保正確的扣款日期比較
+    // 詳細演算法請參考：docs/architecture/date-calculation-algorithms.md
+    
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    return await this.subscriptionRepository.findDueForBilling(startOfDay, endOfDay, batchSize, offset);
+  }
 }
 ```
 
@@ -313,9 +326,34 @@ graph TB
     H --> L
 ```
 
-## 5. 效能優化策略
+## 5. 日期計算邏輯
 
-### 5.1 批次處理最佳化
+### 5.1 扣款日期計算邏輯
+本模組使用專門的日期計算演算法處理複雜的計費週期計算：
+
+#### 月份計費處理
+- 月底日期處理（如 1/31 → 2/28）
+- 閏年處理
+- 跨年度計算
+
+#### 演算法參考
+完整的日期計算邏輯實現請參考：
+- **文檔位置**: `docs/architecture/date-calculation-algorithms.md`
+- **實現細節**: 月週期、季週期、年週期的計算邏輯
+- **邊際案例**: 閏年、月底、時區處理
+
+```typescript
+// 示例：使用日期計算服務
+const nextBillingDate = this.dateCalculator.calculateNextBillingDate(
+  subscription.currentPeriodEnd,
+  subscription.billingCycle,
+  subscription.timezone
+);
+```
+
+## 6. 效能優化策略
+
+### 6.1 多實例部署
 
 | 最佳化項目 | 策略 | 預期效果 |
 |-----------|------|----------|
@@ -324,7 +362,7 @@ graph TB
 | 並發控制 | Worker 數量限制 | 避免資源爭用 |
 | 快取策略 | Redis 暫存常用資料 | 減少 DB 查詢 30% |
 
-### 5.2 資源使用監控
+### 6.2 資源使用監控
 
 ```typescript
 // performance-monitor.ts
@@ -348,7 +386,7 @@ export class PerformanceMonitor {
 }
 ```
 
-## 6. 災難恢復機制
+## 7. 災難恢復機制
 
 ### 6.1 作業恢復策略
 
@@ -375,7 +413,7 @@ flowchart TD
 | 冪等性設計 | UUID + 狀態檢查 | 重複執行保護 |
 | 補償機制 | Saga Pattern | 失敗回滾 |
 
-## 7. 配置管理
+## 8. 配置管理
 
 ### 7.1 環境配置
 
