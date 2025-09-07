@@ -1,7 +1,8 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { CommonService, ErrException, errConstants } from '@myapp/common';
 import { LoggerService } from '@nestjs/common';
 import { CustomResult } from '@xxxhand/app-common';
+import { ProductApplicationService, CreateProductRequest } from '../application/product.application.service';
 
 @Controller({
   path: 'products',
@@ -10,12 +11,41 @@ import { CustomResult } from '@xxxhand/app-common';
 export class ProductsController {
   private readonly _Logger: LoggerService;
 
-  constructor(private readonly cmmService: CommonService) {
+  constructor(
+    private readonly cmmService: CommonService,
+    private readonly productAppService: ProductApplicationService,
+  ) {
     this._Logger = this.cmmService.getDefaultLogger(ProductsController.name);
   }
 
   /**
-   * 查詢所有產品
+   * 創建產品
+   * POST /api/v1/products
+   */
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  public async createProduct(@Body() body: CreateProductRequest): Promise<CustomResult> {
+    this._Logger.log(`Creating product: ${body.name}`);
+
+    try {
+      // 基本驗證
+      if (!body.name || !body.description) {
+        throw ErrException.newFromCodeName(errConstants.ERR_INVALID_REQUEST_DATA);
+      }
+
+      const product = await this.productAppService.createProduct(body);
+      const result = this.productAppService.toApiResponse(product);
+
+      return this.cmmService.newResultInstance().withCode(201).withMessage('Product created successfully').withResult(result);
+    } catch (error) {
+      this._Logger.error('Failed to create product', error);
+      if (error instanceof ErrException) throw error;
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 查詢產品列表
    * GET /api/v1/products
    */
   @Get()
@@ -27,120 +57,109 @@ export class ProductsController {
     this._Logger.log(`Getting products list, status: ${status}, billingInterval: ${billingInterval}, includeInactive: ${includeInactive}`);
 
     try {
-      // Mock products data matching test expectations
-      let products = [
-        {
-          productId: 'prod_premium_monthly',
-          name: 'Premium Plan',
-          description: '完整功能的高級訂閱方案',
-          pricing: {
-            amount: 999,
-            currency: 'TWD',
-          },
-          billing: {
-            interval: 'MONTHLY',
-            intervalCount: 1,
-            trial_days: 7,
-          },
-          features: ['unlimited_storage', 'priority_support', 'advanced_analytics'],
-          status: 'ACTIVE',
-          isActive: true,
-        },
-        {
-          productId: 'prod_basic_monthly',
-          name: 'Basic Plan',
-          description: '入門級用戶的基本方案',
-          pricing: {
-            amount: 499,
-            currency: 'TWD',
-          },
-          billing: {
-            interval: 'MONTHLY',
-            intervalCount: 1,
-            trial_days: 14,
-          },
-          features: ['basic_storage', 'email_support'],
-          status: 'ACTIVE',
-          isActive: true,
-        },
-      ];
-
-      // Apply filters
-      if (status && status !== 'INVALID_STATUS') {
-        products = products.filter((product) => product.status === status);
+      const options: any = {};
+      if (status) {
+        options.status = status;
       }
-
-      if (status === 'INVALID_STATUS') {
-        products = [];
-      }
-
       if (billingInterval) {
-        products = products.filter((product) => product.billing.interval === billingInterval);
+        options.billingInterval = billingInterval;
+      }
+      if (includeInactive === 'false') {
+        options.activeOnly = true;
       }
 
-      if (includeInactive !== 'true') {
-        products = products.filter((product) => product.isActive);
-      }
+      const products = await this.productAppService.getProducts(options);
+      const results = products.map((product) => this.productAppService.toApiResponse(product));
 
-      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-        products,
-      });
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({ products: results });
     } catch (error) {
-      this._Logger.error(`Failed to get products: ${error.message}`, error.stack);
+      this._Logger.error('Failed to get products', error);
+      if (error instanceof ErrException) throw error;
       throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
     }
   }
 
   /**
-   * 根據產品ID查詢產品詳情
+   * 根據 ID 查詢產品
    * GET /api/v1/products/:productId
    */
   @Get(':productId')
-  async getProductById(@Param('productId') productId: string): Promise<CustomResult<any>> {
-    // For debugging - always throw NOT_FOUND for non-existent products
-    if (productId === 'prod_non_existent' || productId === 'invalid-id-format') {
-      throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_NOT_FOUND);
+  public async getProductById(@Param('productId') productId: string): Promise<CustomResult> {
+    this._Logger.log(`Getting product by ID: ${productId}`);
+
+    try {
+      const product = await this.productAppService.getProductById(productId);
+      if (!product) {
+        throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_NOT_FOUND);
+      }
+
+      const result = this.productAppService.toApiResponse(product);
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(result);
+    } catch (error) {
+      this._Logger.error('Failed to get product', error);
+      if (error instanceof ErrException) throw error;
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
     }
+  }
 
-    const mockProducts = [
-      {
-        productId: 'prod_basic_monthly',
-        name: 'Basic Plan',
-        description: '入門級用戶的基本方案',
-        status: 'active',
-        pricing: {
-          amount: 999,
-          currency: 'TWD',
-        },
-        billing: {
-          interval: 'month',
-          trial_days: 7,
-        },
-        features: ['Feature A', 'Feature B'],
-      },
-      {
-        productId: 'prod_premium_monthly',
-        name: 'Premium Plan',
-        description: '專業用戶的高級方案',
-        status: 'active',
-        pricing: {
-          amount: 2999,
-          currency: 'TWD',
-        },
-        billing: {
-          interval: 'month',
-          trial_days: 14,
-        },
-        features: ['Feature A', 'Feature B', 'Feature C', 'Premium Support'],
-      },
-    ];
+  /**
+   * 發佈產品
+   * POST /api/v1/products/:productId/publish
+   */
+  @Post(':productId/publish')
+  @HttpCode(HttpStatus.OK)
+  public async publishProduct(@Param('productId') productId: string): Promise<CustomResult> {
+    this._Logger.log(`Publishing product: ${productId}`);
 
-    const product = mockProducts.find((p) => p.productId === productId);
-    if (!product) {
-      throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_NOT_FOUND);
+    try {
+      const product = await this.productAppService.publishProduct(productId);
+      const result = this.productAppService.toApiResponse(product);
+
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Product published successfully').withResult(result);
+    } catch (error) {
+      this._Logger.error('Failed to publish product', error);
+      if (error instanceof ErrException) throw error;
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
     }
+  }
 
-    return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(product);
+  /**
+   * 暫停產品
+   * POST /api/v1/products/:productId/suspend
+   */
+  @Post(':productId/suspend')
+  @HttpCode(HttpStatus.OK)
+  public async suspendProduct(@Param('productId') productId: string): Promise<CustomResult> {
+    this._Logger.log(`Suspending product: ${productId}`);
+
+    try {
+      const product = await this.productAppService.suspendProduct(productId);
+      const result = this.productAppService.toApiResponse(product);
+
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Product suspended successfully').withResult(result);
+    } catch (error) {
+      this._Logger.error('Failed to suspend product', error);
+      if (error instanceof ErrException) throw error;
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * 查詢產品的計費計劃
+   * GET /api/v1/products/:productId/plans
+   */
+  @Get(':productId/plans')
+  public async getProductPlans(@Param('productId') productId: string): Promise<CustomResult> {
+    this._Logger.log(`Getting plans for product: ${productId}`);
+
+    try {
+      const plans = await this.productAppService.getProductPlans(productId);
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(plans);
+    } catch (error) {
+      this._Logger.error('Failed to get product plans', error);
+      if (error instanceof ErrException) throw error;
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
+    }
   }
 
   /**
@@ -148,64 +167,19 @@ export class ProductsController {
    * GET /api/v1/products/:productId/upgrade-options
    */
   @Get(':productId/upgrade-options')
-  async getUpgradeOptions(@Param('productId') productId: string): Promise<CustomResult<any>> {
-    // For debugging - always throw NOT_FOUND for non-existent products
-    if (productId === 'prod_non_existent') {
-      throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_NOT_FOUND);
+  public async getUpgradeOptions(@Param('productId') productId: string): Promise<CustomResult> {
+    this._Logger.log(`Getting upgrade options for product: ${productId}`);
+
+    try {
+      const result = await this.productAppService.getUpgradeOptions(productId);
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(result);
+    } catch (error) {
+      this._Logger.error('Failed to get upgrade options', error);
+      if (error.message && error.message.includes('not found')) {
+        throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_NOT_FOUND);
+      }
+      if (error instanceof ErrException) throw error;
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
     }
-
-    // Check if product exists first
-    const mockProducts = [
-      { productId: 'prod_basic_monthly', name: 'Basic Plan' },
-      { productId: 'prod_premium_monthly', name: 'Premium Plan' },
-    ];
-
-    const currentProduct = mockProducts.find((p) => p.productId === productId);
-    if (!currentProduct) {
-      throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_NOT_FOUND);
-    }
-
-    if (productId === 'prod_basic_monthly') {
-      const upgradeOptions = [
-        {
-          productId: 'prod_premium_monthly',
-          name: 'Premium Plan',
-          pricing: {
-            amount: 2999,
-            currency: 'TWD',
-          },
-          priceDifference: {
-            amount: 2000,
-            currency: 'TWD',
-          },
-          estimatedChargeDate: '2024-12-01',
-        },
-      ];
-
-      return this.cmmService
-        .newResultInstance()
-        .withCode(200)
-        .withMessage('Success')
-        .withResult({
-          currentProduct: {
-            productId: 'prod_basic_monthly',
-            name: 'Basic Plan',
-          },
-          upgradeOptions,
-        });
-    }
-
-    // Premium plan has no upgrade options
-    return this.cmmService
-      .newResultInstance()
-      .withCode(200)
-      .withMessage('Success')
-      .withResult({
-        currentProduct: {
-          productId,
-          name: currentProduct.name,
-        },
-        upgradeOptions: [],
-      });
   }
 }

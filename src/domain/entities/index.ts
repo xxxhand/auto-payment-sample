@@ -4,6 +4,8 @@ export * from './base-entity.abstract';
 // 核心領域實體
 export * from './customer.entity';
 export * from './payment-method.entity';
+export * from './product.entity';
+export * from './billing-plan.entity';
 export * from './subscription.entity';
 export * from './payment.entity';
 export * from './billing-attempt.entity';

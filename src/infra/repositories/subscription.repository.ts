@@ -28,7 +28,7 @@ export class SubscriptionRepository {
         paymentMethodId: new ObjectId(entity.paymentMethodId),
         planName: entity.planName,
         status: entity.status,
-        billingCycle: entity.billingCycle,
+        billingCycle: entity.billingCycle.type, // 轉換為 BillingCycle 枚舉
         amount: entity.amount,
         currency: entity.currency,
         trialEndDate: entity.trialEndDate,
@@ -60,7 +60,7 @@ export class SubscriptionRepository {
           paymentMethodId: new ObjectId(entity.paymentMethodId),
           planName: entity.planName,
           status: entity.status,
-          billingCycle: entity.billingCycle,
+          billingCycle: entity.billingCycle.type, // 轉換為 BillingCycle 枚舉
           amount: entity.amount,
           currency: entity.currency,
           trialEndDate: entity.trialEndDate,

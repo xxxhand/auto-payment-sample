@@ -12,10 +12,13 @@ import { RefundsController } from './controllers/refunds.controller';
 import { AccountController } from './controllers/account.controller';
 import { ECPayWebhookController } from './controllers/ecpay-webhook.controller';
 import { HealthController } from './controllers/health.controller';
+import { DebugController } from './controllers/debug.controller';
 import { ExampleRepository } from './infra/repositories/example.repository';
 import { CustomerRepository } from './infra/repositories/customer.repository';
 import { SubscriptionRepository } from './infra/repositories/subscription.repository';
 import { PaymentRepository } from './infra/repositories/payment.repository';
+import { ProductRepository } from './infra/repositories/product.repository';
+import { BillingPlanRepository } from './infra/repositories/billing-plan.repository';
 // Business Services
 import { CustomerService } from './domain/services/customer.service';
 import { SubscriptionService } from './domain/services/subscription.service';
@@ -24,6 +27,9 @@ import { ProductService } from './domain/services/product.service';
 import { PromotionService } from './domain/services/promotion.service';
 import { RefundService } from './domain/services/refund.service';
 import { AccountService } from './domain/services/account.service';
+// Application Services
+import { ProductApplicationService } from './application/product.application.service';
+import { SubscriptionApplicationService } from './application/subscription.application.service';
 // Payment Module
 import { PaymentModule } from './domain/services/payment/payment.module';
 import { AppExceptionFilter } from './app-components/app-exception.filter';
@@ -41,6 +47,7 @@ import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
     AccountController,
     ECPayWebhookController,
     HealthController,
+    DebugController,
   ],
   providers: [
     AppService,
@@ -53,6 +60,8 @@ import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
     CustomerRepository,
     SubscriptionRepository,
     PaymentRepository,
+    ProductRepository,
+    BillingPlanRepository,
     // Business Services
     CustomerService,
     SubscriptionService,
@@ -61,6 +70,9 @@ import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
     PromotionService,
     RefundService,
     AccountService,
+    // Application Services
+    ProductApplicationService,
+    SubscriptionApplicationService,
   ],
 })
 export class AppModule implements NestModule, OnApplicationBootstrap, BeforeApplicationShutdown {

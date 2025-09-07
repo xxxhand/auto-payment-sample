@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { SubscriptionEntity, SubscriptionStatus, BillingCycle } from '../entities';
+import { CancellationReason } from '../enums/codes.const';
 import { SubscriptionRepository } from '../../infra/repositories/subscription.repository';
 import { CustomDefinition } from '@xxxhand/app-common';
 
@@ -44,10 +45,9 @@ export class SubscriptionService {
     if (trialDays && trialDays > 0) {
       const trialEnd = new Date();
       trialEnd.setDate(trialEnd.getDate() + trialDays);
-      subscription.trialEndDate = trialEnd;
-      subscription.status = SubscriptionStatus.TRIALING;
+      subscription.setTrialPeriod(trialEnd);
     } else {
-      subscription.status = SubscriptionStatus.ACTIVE;
+      subscription.activate({ reason: 'Initial subscription creation' });
     }
 
     // 計算首次計費週期
@@ -89,14 +89,34 @@ export class SubscriptionService {
   /**
    * 取消訂閱
    */
-  public async cancelSubscription(subscriptionId: string, reason?: string): Promise<CustomDefinition.TNullable<SubscriptionEntity>> {
+  async cancelSubscription(subscriptionId: string, reason: string): Promise<SubscriptionEntity> {
     const subscription = await this.subscriptionRepository.findById(subscriptionId);
     if (!subscription) {
       throw new Error(`Subscription with ID ${subscriptionId} not found`);
     }
 
-    subscription.cancel(reason);
-    return await this.subscriptionRepository.save(subscription);
+    // Convert string to CancellationReason
+    let cancellationReason: CancellationReason;
+    switch (reason.toLowerCase()) {
+      case 'user_requested':
+        cancellationReason = CancellationReason.USER_REQUESTED;
+        break;
+      case 'payment_failed':
+        cancellationReason = CancellationReason.PAYMENT_FAILED;
+        break;
+      case 'billing_dispute':
+        cancellationReason = CancellationReason.BILLING_DISPUTE;
+        break;
+      case 'too_expensive':
+        cancellationReason = CancellationReason.TOO_EXPENSIVE;
+        break;
+      default:
+        cancellationReason = CancellationReason.USER_REQUESTED;
+    }
+
+    subscription.cancel(cancellationReason, 'system');
+    await this.subscriptionRepository.save(subscription);
+    return subscription;
   }
 
   /**
@@ -228,10 +248,29 @@ export class SubscriptionService {
       pricingAdjustment.prorationAmount = Math.round(prorationAmount);
     }
 
-    // 更新訂閱資訊
-    subscription.planName = newPlanName;
-    subscription.amount = newAmount;
-    subscription.updatedAt = new Date();
+    // 計劃變更請求 (需要在實體中實現計劃變更邏輯)
+    // TODO: 實現正確的計劃變更邏輯，這裡只是臨時的兼容性代碼
+    const changeRequest = {
+      oldAmount,
+      newAmount,
+      newPlanName,
+      effectiveDate: effectiveDate === 'immediate' ? new Date() : subscription.currentPeriodEnd,
+    };
+
+    // 計算按比例計費
+    if (effectiveDate === 'immediate' && prorationBehavior === 'create_prorations') {
+      const daysRemaining = Math.ceil((subscription.currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      const totalDays = Math.ceil((subscription.currentPeriodEnd.getTime() - subscription.currentPeriodStart.getTime()) / (1000 * 60 * 60 * 24));
+      const prorationAmount = ((newAmount - oldAmount) * daysRemaining) / totalDays;
+      pricingAdjustment.prorationAmount = Math.round(prorationAmount);
+    }
+
+    // 更新訂閱元資料 (臨時解決方案，直到實現正確的計劃變更邏輯)
+    subscription.updateMetadata({
+      planName: newPlanName,
+      amount: newAmount,
+      lastPlanChange: new Date().toISOString(),
+    });
 
     if (effectiveDate === 'immediate') {
       // 立即生效，更新當前計費週期
@@ -301,7 +340,7 @@ export class SubscriptionService {
     subscription.updatedAt = new Date();
 
     // 重新計算下次計費日期
-    const nextBillingDate = this.calculateNextBillingDate(new Date(), subscription.billingCycle);
+    const nextBillingDate = subscription.billingCycle.calculateNextBillingDate(new Date());
     subscription.updateBillingPeriod(new Date(), nextBillingDate, nextBillingDate);
 
     const updatedSubscription = await this.subscriptionRepository.save(subscription);

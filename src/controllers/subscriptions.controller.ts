@@ -2,6 +2,13 @@ import { Controller, Post, Get, Put, Body, Param, Query, HttpCode, HttpStatus } 
 import { CommonService, ErrException, errConstants } from '@myapp/common';
 import { LoggerService } from '@nestjs/common';
 import { CustomResult } from '@xxxhand/app-common';
+import {
+  SubscriptionApplicationService,
+  CreateSubscriptionRequest as AppCreateSubscriptionRequest,
+  CancelSubscriptionRequest as AppCancelSubscriptionRequest,
+  PlanChangeRequest as AppPlanChangeRequest,
+  PauseSubscriptionRequest as AppPauseSubscriptionRequest,
+} from '../application/subscription.application.service';
 
 interface CreateSubscriptionRequest {
   productId: string;
@@ -48,7 +55,10 @@ interface RefundSubscriptionRequest {
 export class SubscriptionsController {
   private readonly _Logger: LoggerService;
 
-  constructor(private readonly cmmService: CommonService) {
+  constructor(
+    private readonly cmmService: CommonService,
+    private readonly subscriptionAppService: SubscriptionApplicationService,
+  ) {
     this._Logger = this.cmmService.getDefaultLogger(SubscriptionsController.name);
   }
 
@@ -178,45 +188,23 @@ export class SubscriptionsController {
    * 取消訂閱
    * POST /api/v1/subscriptions/:id/cancel
    */
-  @Post(':id/cancel')
+  @Post(':subscriptionId/cancel')
   @HttpCode(HttpStatus.OK)
-  public async cancelSubscription(@Param('id') id: string, @Body() body: CancelSubscriptionRequest): Promise<CustomResult> {
-    this._Logger.log(`Canceling subscription: ${id}, reason: ${body.reason || 'N/A'}`);
+  public async cancelSubscription(@Param('subscriptionId') subscriptionId: string, @Body() body: AppCancelSubscriptionRequest): Promise<CustomResult> {
+    this._Logger.log(`Cancelling subscription: ${subscriptionId}`);
 
     try {
-      // Mock implementation for testing
-      if (id === 'sub_nonexistent' || id === 'sub_non_existent') {
-        throw ErrException.newFromCodeName(errConstants.ERR_SUBSCRIPTION_NOT_FOUND);
-      }
+      const cancellationResult = await this.subscriptionAppService.cancelSubscription(subscriptionId, body);
 
-      // 處理立即取消的情況
-      const isImmediate = body.reason === 'Immediate cancellation requested';
-
-      const result: any = {
-        subscriptionId: id,
-        status: 'CANCELLED',
-        cancelledAt: new Date().toISOString(),
-        effectiveDate: isImmediate ? new Date().toISOString() : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        reason: body.reason || 'Customer request',
-        updatedAt: new Date().toISOString(),
-      };
-
-      // 如果是立即取消，添加退款信息
-      if (isImmediate) {
-        result.refund = {
-          amount: 999,
-          currency: 'TWD',
-          status: 'PROCESSING',
-        };
-      }
-
-      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(result);
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Subscription cancellation request processed successfully').withResult(cancellationResult);
     } catch (error) {
-      this._Logger.error(`Failed to cancel subscription: ${error.message}`, error.stack);
-      if (error instanceof ErrException) {
-        throw error;
+      this._Logger.error('Failed to cancel subscription', error);
+      // 處理 404 錯誤
+      if (error.message && error.message.includes('not found')) {
+        throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_NOT_FOUND);
       }
-      throw ErrException.newFromCodeName(errConstants.ERR_CANCEL_SUBSCRIPTION_FAILED);
+      if (error instanceof ErrException) throw error;
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -406,37 +394,23 @@ export class SubscriptionsController {
    * 退款訂閱
    * POST /api/v1/subscriptions/:id/refund
    */
-  @Post(':id/refund')
+  @Post(':subscriptionId/refund')
   @HttpCode(HttpStatus.OK)
-  public async refundSubscription(@Param('id') id: string, @Body() body: RefundSubscriptionRequest): Promise<CustomResult> {
-    this._Logger.log(`Requesting refund for subscription: ${id}`);
+  public async refundSubscription(@Param('subscriptionId') subscriptionId: string, @Body() body: any): Promise<CustomResult> {
+    this._Logger.log(`Processing refund for subscription: ${subscriptionId}`);
 
     try {
-      // Mock implementation for testing
-      if (id === 'sub_non_existent') {
-        throw ErrException.newFromCodeName(errConstants.ERR_SUBSCRIPTION_NOT_FOUND);
-      }
+      const refundResult = await this.subscriptionAppService.processRefund(subscriptionId, body);
 
-      return this.cmmService
-        .newResultInstance()
-        .withCode(200)
-        .withMessage('Success')
-        .withResult({
-          subscriptionId: id,
-          refundId: 'ref_' + Date.now(),
-          refundType: body.refundType,
-          refundAmount: body.amount || (body.refundType === 'FULL' ? { amount: 999, currency: 'TWD' } : { amount: 500, currency: 'TWD' }),
-          reason: body.reason,
-          status: 'REQUESTED',
-          estimatedProcessingTime: '3-5 business days',
-          createdAt: new Date().toISOString(),
-        });
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Refund request processed successfully').withResult(refundResult);
     } catch (error) {
-      this._Logger.error(`Failed to process refund: ${error.message}`, error.stack);
-      if (error instanceof ErrException) {
-        throw error;
+      this._Logger.error('Failed to process refund', error);
+      // 處理 404 錯誤
+      if (error.message && error.message.includes('not found')) {
+        throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_NOT_FOUND);
       }
-      throw ErrException.newFromCodeName(errConstants.ERR_PROCESS_REFUND_FAILED);
+      if (error instanceof ErrException) throw error;
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
     }
   }
 }
