@@ -126,58 +126,72 @@ export class PromotionsController {
 
       // Check if it's an expired promotion
       if (promotion.status === 'EXPIRED') {
-        return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-          valid: false,
-          promotion,
-          discount: promotion.discount,
-          eligibility: {
-            ...promotion.eligibility,
-            eligible: false,
-            reasons: ['Promotion code has expired'],
-          },
-        });
+        return this.cmmService
+          .newResultInstance()
+          .withCode(200)
+          .withMessage('Success')
+          .withResult({
+            valid: false,
+            promotion,
+            discount: promotion.discount,
+            eligibility: {
+              ...promotion.eligibility,
+              eligible: false,
+              reasons: ['Promotion code has expired'],
+            },
+          });
       }
 
       // Check product eligibility
-      if (promotion.eligibility.productRestrictions.length > 0 && 
-          !promotion.eligibility.productRestrictions.includes(body.productId)) {
-        return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-          valid: false,
+      if (promotion.eligibility.productRestrictions.length > 0 && !promotion.eligibility.productRestrictions.includes(body.productId)) {
+        return this.cmmService
+          .newResultInstance()
+          .withCode(200)
+          .withMessage('Success')
+          .withResult({
+            valid: false,
+            promotion,
+            discount: promotion.discount,
+            eligibility: {
+              ...promotion.eligibility,
+              eligible: false,
+              reasons: ['Product not eligible for this promotion'],
+            },
+          });
+      }
+
+      // Check customer eligibility
+      if (promotion.eligibility.customerRestrictions.length > 0 && body.customerId && !promotion.eligibility.customerRestrictions.includes(body.customerId)) {
+        return this.cmmService
+          .newResultInstance()
+          .withCode(200)
+          .withMessage('Success')
+          .withResult({
+            valid: false,
+            promotion,
+            discount: promotion.discount,
+            eligibility: {
+              ...promotion.eligibility,
+              eligible: false,
+              reasons: ['Customer not eligible for this promotion'],
+            },
+          });
+      }
+
+      return this.cmmService
+        .newResultInstance()
+        .withCode(200)
+        .withMessage('Success')
+        .withResult({
+          valid: true,
           promotion,
           discount: promotion.discount,
           eligibility: {
             ...promotion.eligibility,
-            eligible: false,
-            reasons: ['Product not eligible for this promotion'],
+            eligible: true,
+            reasons: [],
           },
         });
-      }
-
-      // Check customer eligibility  
-      if (promotion.eligibility.customerRestrictions.length > 0 && body.customerId &&
-          !promotion.eligibility.customerRestrictions.includes(body.customerId)) {
-        return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-          valid: false,
-          promotion,
-          discount: promotion.discount,
-          eligibility: {
-            ...promotion.eligibility,
-            eligible: false,
-            reasons: ['Customer not eligible for this promotion'],
-          },
-        });
-      }
-
-      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-        valid: true,
-        promotion,
-        discount: promotion.discount,
-        eligibility: {
-          ...promotion.eligibility,
-          eligible: true,
-          reasons: [],
-        },
-      });
     } catch (error) {
       this._Logger.error(`Failed to validate promotion: ${error.message}`, error.stack);
       if (error instanceof ErrException) {
@@ -187,16 +201,12 @@ export class PromotionsController {
     }
   }
 
-    /**
+  /**
    * 查詢可用優惠
    * GET /api/v1/promotions?productId=xxx&customerId=xxx
    */
   @Get()
-  public async getAvailablePromotions(
-    @Query('productId') productId?: string, 
-    @Query('customerId') customerId?: string,
-    @Query('type') type?: string
-  ): Promise<CustomResult> {
+  public async getAvailablePromotions(@Query('productId') productId?: string, @Query('customerId') customerId?: string, @Query('type') type?: string): Promise<CustomResult> {
     this._Logger.log(`Getting available promotions for product: ${productId}, customer: ${customerId}`);
 
     try {
@@ -268,7 +278,7 @@ export class PromotionsController {
       // Filter by type if specified
       let filteredPromotions = allPromotions;
       if (type) {
-        filteredPromotions = allPromotions.filter(p => p.type === type);
+        filteredPromotions = allPromotions.filter((p) => p.type === type);
       }
 
       return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({

@@ -290,11 +290,11 @@ export class PaymentService {
 
     while (attempts < this.maxRetryAttempts) {
       attempts++;
-      
+
       try {
         const attemptId = `${paymentId}_attempt_${attempts}`;
         const attemptStart = new Date().toISOString();
-        
+
         // 創建支付嘗試記錄
         const paymentAttempt: PaymentAttempt = {
           id: attemptId,
@@ -353,7 +353,7 @@ export class PaymentService {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         lastError = errorMessage;
-        
+
         // 更新嘗試記錄
         const attempt = this.paymentAttempts.find((a) => a.paymentId === paymentId && a.attemptNumber === attempts);
         if (attempt) {
@@ -453,7 +453,7 @@ export class PaymentService {
       };
     } else {
       const errorMessages = ['Insufficient funds', 'Card declined', 'Network timeout', 'Invalid payment method', 'Fraud detection triggered'];
-      
+
       return {
         success: false,
         errorMessage: errorMessages[Math.floor(Math.random() * errorMessages.length)],

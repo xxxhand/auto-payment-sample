@@ -410,12 +410,12 @@ export class AccountService {
    */
   private detectCardBrand(cardNumber: string): string {
     const number = cardNumber.replace(/\D/g, '');
-    
+
     if (number.startsWith('4')) return 'Visa';
     if (/^5[1-5]/.test(number) || /^2[2-7]/.test(number)) return 'Mastercard';
     if (/^3[47]/.test(number)) return 'American Express';
     if (/^6/.test(number)) return 'Discover';
-    
+
     return 'Unknown';
   }
 }

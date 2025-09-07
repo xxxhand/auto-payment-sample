@@ -69,7 +69,7 @@ export class ProductsController {
       if (status && status !== 'INVALID_STATUS') {
         products = products.filter((product) => product.status === status);
       }
-      
+
       if (status === 'INVALID_STATUS') {
         products = [];
       }
@@ -140,17 +140,14 @@ export class ProductsController {
       throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_NOT_FOUND);
     }
 
-    return this.cmmService.newResultInstance()
-      .withCode(200)
-      .withMessage('Success')
-      .withResult(product);
+    return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(product);
   }
 
   /**
    * 查詢產品的升級選項
    * GET /api/v1/products/:productId/upgrade-options
    */
-    @Get(':productId/upgrade-options')
+  @Get(':productId/upgrade-options')
   async getUpgradeOptions(@Param('productId') productId: string): Promise<CustomResult<any>> {
     // For debugging - always throw NOT_FOUND for non-existent products
     if (productId === 'prod_non_existent') {
@@ -185,7 +182,8 @@ export class ProductsController {
         },
       ];
 
-      return this.cmmService.newResultInstance()
+      return this.cmmService
+        .newResultInstance()
         .withCode(200)
         .withMessage('Success')
         .withResult({
@@ -198,7 +196,8 @@ export class ProductsController {
     }
 
     // Premium plan has no upgrade options
-    return this.cmmService.newResultInstance()
+    return this.cmmService
+      .newResultInstance()
       .withCode(200)
       .withMessage('Success')
       .withResult({

@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { SubscriptionEntity, SubscriptionStatus, BillingCycle } from '../entities';
 import { SubscriptionRepository } from '../../infra/repositories/subscription.repository';
-import { CustomerRepository } from '../../infra/repositories/customer.repository';
 import { CustomDefinition } from '@xxxhand/app-common';
 
 /**
@@ -12,7 +11,8 @@ import { CustomDefinition } from '@xxxhand/app-common';
 export class SubscriptionService {
   constructor(
     private readonly subscriptionRepository: SubscriptionRepository,
-    private readonly customerRepository: CustomerRepository,
+    // TODO: Phase 4.2 - Re-add CustomerRepository when implementing customer management
+    // private readonly customerRepository: CustomerRepository,
   ) {}
 
   /**
@@ -26,10 +26,16 @@ export class SubscriptionService {
     billingCycle: BillingCycle = BillingCycle.MONTHLY,
     trialDays?: number,
   ): Promise<SubscriptionEntity> {
+    // TODO: Phase 4.2 - Re-implement customer validation with CustomerRepository
     // 驗證客戶存在且活躍
-    const customer = await this.customerRepository.findById(customerId);
-    if (!customer || !customer.isActive()) {
-      throw new Error(`Active customer with ID ${customerId} not found`);
+    // const customer = await this.customerRepository.findById(customerId);
+    // if (!customer || !customer.isActive()) {
+    //   throw new Error(`Active customer with ID ${customerId} not found`);
+    // }
+
+    // Temporary mock validation for Phase 4.1
+    if (!customerId || customerId.length === 0) {
+      throw new Error(`Customer ID is required`);
     }
 
     const subscription = new SubscriptionEntity(customerId, paymentMethodId, planName, amount, billingCycle);
@@ -293,13 +299,13 @@ export class SubscriptionService {
 
     subscription.status = SubscriptionStatus.ACTIVE;
     subscription.updatedAt = new Date();
-    
+
     // 重新計算下次計費日期
     const nextBillingDate = this.calculateNextBillingDate(new Date(), subscription.billingCycle);
     subscription.updateBillingPeriod(new Date(), nextBillingDate, nextBillingDate);
 
     const updatedSubscription = await this.subscriptionRepository.save(subscription);
-    
+
     return {
       subscription: updatedSubscription,
       resumedAt: new Date(),

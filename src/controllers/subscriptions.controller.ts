@@ -48,9 +48,7 @@ interface RefundSubscriptionRequest {
 export class SubscriptionsController {
   private readonly _Logger: LoggerService;
 
-  constructor(
-    private readonly cmmService: CommonService,
-  ) {
+  constructor(private readonly cmmService: CommonService) {
     this._Logger = this.cmmService.getDefaultLogger(SubscriptionsController.name);
   }
 
@@ -212,11 +210,7 @@ export class SubscriptionsController {
         };
       }
 
-      return this.cmmService
-        .newResultInstance()
-        .withCode(200)
-        .withMessage('Success')
-        .withResult(result);
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(result);
     } catch (error) {
       this._Logger.error(`Failed to cancel subscription: ${error.message}`, error.stack);
       if (error instanceof ErrException) {
@@ -241,18 +235,22 @@ export class SubscriptionsController {
         throw ErrException.newFromCodeName(errConstants.ERR_SUBSCRIPTION_NOT_FOUND);
       }
 
-      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-        subscriptionId: subscriptionId,
-        oldProductId: 'prod_basic_monthly',
-        newProductId: body.newProductId,
-        effectiveDate: body.effectiveDate || new Date().toISOString(),
-        pricingAdjustment: {
-          prorationAmount: body.effectiveDate === 'immediate' ? 500 : 0,
-          nextBillingAmount: 2999,
-        },
-        status: 'PLAN_CHANGED',
-        updatedAt: new Date().toISOString(),
-      });
+      return this.cmmService
+        .newResultInstance()
+        .withCode(200)
+        .withMessage('Success')
+        .withResult({
+          subscriptionId: subscriptionId,
+          oldProductId: 'prod_basic_monthly',
+          newProductId: body.newProductId,
+          effectiveDate: body.effectiveDate || new Date().toISOString(),
+          pricingAdjustment: {
+            prorationAmount: body.effectiveDate === 'immediate' ? 500 : 0,
+            nextBillingAmount: 2999,
+          },
+          status: 'PLAN_CHANGED',
+          updatedAt: new Date().toISOString(),
+        });
     } catch (error) {
       this._Logger.error(`Failed to change plan: ${error.message}`, error.stack);
       if (error instanceof ErrException) {
@@ -308,13 +306,17 @@ export class SubscriptionsController {
 
       const availableProducts = [...upgradeOptions, ...downgradeOptions];
 
-      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-        currentProduct: {
-          productId: 'prod_basic_monthly',
-          name: 'Basic Plan',
-        },
-        availableProducts,
-      });
+      return this.cmmService
+        .newResultInstance()
+        .withCode(200)
+        .withMessage('Success')
+        .withResult({
+          currentProduct: {
+            productId: 'prod_basic_monthly',
+            name: 'Basic Plan',
+          },
+          availableProducts,
+        });
     } catch (error) {
       this._Logger.error(`Failed to get plan change options: ${error.message}`, error.stack);
       if (error instanceof ErrException) {
@@ -339,14 +341,18 @@ export class SubscriptionsController {
         throw ErrException.newFromCodeName(errConstants.ERR_SUBSCRIPTION_NOT_FOUND);
       }
 
-      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-        subscriptionId: id,
-        status: 'PAUSED',
-        pausedAt: new Date().toISOString(),
-        reason: body.reason || 'Customer request',
-        scheduledResumeDate: body.resumeDate || null,
-        updatedAt: new Date().toISOString(),
-      });
+      return this.cmmService
+        .newResultInstance()
+        .withCode(200)
+        .withMessage('Success')
+        .withResult({
+          subscriptionId: id,
+          status: 'PAUSED',
+          pausedAt: new Date().toISOString(),
+          reason: body.reason || 'Customer request',
+          scheduledResumeDate: body.resumeDate || null,
+          updatedAt: new Date().toISOString(),
+        });
     } catch (error) {
       this._Logger.error(`Failed to pause subscription: ${error.message}`, error.stack);
       if (error instanceof ErrException) {
@@ -376,13 +382,17 @@ export class SubscriptionsController {
         throw ErrException.newFromCodeName(errConstants.ERR_SUBSCRIPTION_NOT_PAUSED);
       }
 
-      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-        subscriptionId: id,
-        status: 'ACTIVE',
-        resumedAt: new Date().toISOString(),
-        nextBillingDate: new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
-        updatedAt: new Date().toISOString(),
-      });
+      return this.cmmService
+        .newResultInstance()
+        .withCode(200)
+        .withMessage('Success')
+        .withResult({
+          subscriptionId: id,
+          status: 'ACTIVE',
+          resumedAt: new Date().toISOString(),
+          nextBillingDate: new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+          updatedAt: new Date().toISOString(),
+        });
     } catch (error) {
       this._Logger.error(`Failed to resume subscription: ${error.message}`, error.stack);
       if (error instanceof ErrException) {
@@ -407,16 +417,20 @@ export class SubscriptionsController {
         throw ErrException.newFromCodeName(errConstants.ERR_SUBSCRIPTION_NOT_FOUND);
       }
 
-      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
-        subscriptionId: id,
-        refundId: 'ref_' + Date.now(),
-        refundType: body.refundType,
-        refundAmount: body.amount || (body.refundType === 'FULL' ? { amount: 999, currency: 'TWD' } : { amount: 500, currency: 'TWD' }),
-        reason: body.reason,
-        status: 'REQUESTED',
-        estimatedProcessingTime: '3-5 business days',
-        createdAt: new Date().toISOString(),
-      });
+      return this.cmmService
+        .newResultInstance()
+        .withCode(200)
+        .withMessage('Success')
+        .withResult({
+          subscriptionId: id,
+          refundId: 'ref_' + Date.now(),
+          refundType: body.refundType,
+          refundAmount: body.amount || (body.refundType === 'FULL' ? { amount: 999, currency: 'TWD' } : { amount: 500, currency: 'TWD' }),
+          reason: body.reason,
+          status: 'REQUESTED',
+          estimatedProcessingTime: '3-5 business days',
+          createdAt: new Date().toISOString(),
+        });
     } catch (error) {
       this._Logger.error(`Failed to process refund: ${error.message}`, error.stack);
       if (error instanceof ErrException) {

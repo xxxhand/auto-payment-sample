@@ -59,10 +59,10 @@ export class AppHelper {
       const builder: TestingModuleBuilder = await Test.createTestingModule({
         imports: [AppModule],
       });
-      
+
       // 添加MongoDB模擬
       builder.overrideProvider(DEFAULT_MONGO).useValue(mockMongoClient);
-      
+
       if (mockers.size > 0) {
         mockers.forEach((v, k) => {
           builder.overrideProvider(k).useValue(v);

@@ -143,13 +143,13 @@ export class PromotionService {
     };
   }> {
     const promotion = this.promotions.find((p) => p.code === request.code);
-    
+
     if (!promotion) {
       throw new Error('Promotion code not found');
     }
 
     const eligibility = await this.checkEligibility(promotion, request);
-    
+
     if (!eligibility.eligible) {
       return {
         valid: false,
@@ -231,7 +231,7 @@ export class PromotionService {
     const now = new Date();
     const validFrom = new Date(promotion.validFrom);
     const validUntil = new Date(promotion.validUntil);
-    
+
     if (now < validFrom || now > validUntil) {
       reasons.push('Promotion code has expired');
     }

@@ -177,9 +177,8 @@ export class AccountController {
       // 檢查卡片是否過期
       const currentYear = new Date().getFullYear();
       const currentMonth = new Date().getMonth() + 1;
-      
-      if (body.card?.expYear && body.card?.expMonth && 
-          (body.card.expYear < currentYear || (body.card.expYear === currentYear && body.card.expMonth < currentMonth))) {
+
+      if (body.card?.expYear && body.card?.expMonth && (body.card.expYear < currentYear || (body.card.expYear === currentYear && body.card.expMonth < currentMonth))) {
         throw ErrException.newFromCodeName(errConstants.ERR_CARD_EXPIRED);
       }
 
