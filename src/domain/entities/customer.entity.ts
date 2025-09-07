@@ -33,6 +33,9 @@ export class CustomerEntity extends BaseEntity {
   /** 時區 */
   public timezone: string = 'Asia/Taipei';
 
+  /** 客戶元數據（用於合規性和擴展資訊） */
+  public metadata: Record<string, any> = {};
+
   constructor(name: string, email: string) {
     super();
     this.name = name;

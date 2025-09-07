@@ -16,6 +16,19 @@ export interface IConf {
     user: string;
     password: string;
   };
+  ecpay: {
+    merchantID: string;
+    hashKey: string;
+    hashIV: string;
+    isTestMode: boolean;
+    returnURL: string;
+    clientBackURL?: string;
+    orderResultURL?: string;
+    apiEndpoints: {
+      aio: string;
+      query: string;
+    };
+  };
 }
 
 export const cmmConf: IConf = {
@@ -36,4 +49,17 @@ export const cmmConf: IConf = {
   defaultLoggerPath: process.env.DEFAULT_LOGGER_PATH,
   localesPath: process.env.LOCALES_PATH,
   fallbackLocale: process.env.FALLBACK_LOCALE,
+  ecpay: {
+    merchantID: process.env.ECPAY_MERCHANT_ID || (process.env.NODE_ENV !== 'production' ? '2000132' : ''),
+    hashKey: process.env.ECPAY_HASH_KEY || (process.env.NODE_ENV !== 'production' ? '5294y06JbISpM5x9' : ''),
+    hashIV: process.env.ECPAY_HASH_IV || (process.env.NODE_ENV !== 'production' ? 'v77hoKGq4kWxNNIS' : ''),
+    isTestMode: process.env.NODE_ENV !== 'production',
+    returnURL: process.env.ECPAY_RETURN_URL || 'https://your-domain.com/api/webhooks/ecpay',
+    clientBackURL: process.env.ECPAY_CLIENT_BACK_URL,
+    orderResultURL: process.env.ECPAY_ORDER_RESULT_URL,
+    apiEndpoints: {
+      aio: process.env.NODE_ENV !== 'production' ? 'https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5' : 'https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5',
+      query: process.env.NODE_ENV !== 'production' ? 'https://payment-stage.ecpay.com.tw/Cashier/QueryTradeInfo/V5' : 'https://payment.ecpay.com.tw/Cashier/QueryTradeInfo/V5',
+    },
+  },
 };

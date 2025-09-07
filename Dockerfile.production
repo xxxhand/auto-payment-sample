@@ -1,0 +1,85 @@
+# 多階段構建 Dockerfile for 生產環境
+FROM node:20-alpine AS base
+
+# 設定工作目錄
+WORKDIR /app
+
+# 安裝 dumb-init (用於正確處理信號)
+RUN apk add --no-cache dumb-init
+
+# 複製 package.json 和 yarn.lock
+COPY package.json yarn.lock ./
+
+# 開發階段
+FROM base AS development
+RUN yarn install --frozen-lockfile
+COPY . .
+EXPOSE 3000
+CMD ["dumb-init", "yarn", "start:dev"]
+
+# 構建階段
+FROM base AS build
+
+# 安裝所有依賴 (包含 devDependencies)
+RUN yarn install --frozen-lockfile
+
+# 複製源代碼
+COPY . .
+
+# 構建應用
+RUN yarn build
+
+# 清理開發依賴，只保留生產依賴
+RUN yarn install --production --frozen-lockfile && yarn cache clean
+
+# 生產階段
+FROM node:20-alpine AS production
+
+# 安裝 dumb-init 和其他生產環境工具
+RUN apk add --no-cache \
+    dumb-init \
+    curl \
+    tzdata && \
+    cp /usr/share/zoneinfo/Asia/Taipei /etc/localtime && \
+    echo "Asia/Taipei" > /etc/timezone && \
+    apk del tzdata
+
+# 創建非 root 用戶
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nestjs -u 1001
+
+# 設定工作目錄
+WORKDIR /app
+
+# 複製構建結果和生產依賴
+COPY --from=build --chown=nestjs:nodejs /app/dist ./dist
+COPY --from=build --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=nestjs:nodejs /app/package.json ./
+
+# 複製其他必要文件
+COPY --chown=nestjs:nodejs resources ./resources
+COPY --chown=nestjs:nodejs docs ./docs
+
+# 創建日誌目錄
+RUN mkdir -p /app/logs && chown -R nestjs:nodejs /app/logs
+
+# 創建上傳目錄
+RUN mkdir -p /app/uploads && chown -R nestjs:nodejs /app/uploads
+
+# 設定環境變數
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# 健康檢查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+# 暴露端口
+EXPOSE 3000
+EXPOSE 3443
+
+# 切換到非 root 用戶
+USER nestjs
+
+# 啟動應用
+CMD ["dumb-init", "node", "dist/main"]
