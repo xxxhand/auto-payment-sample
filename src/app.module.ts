@@ -16,9 +16,14 @@ import { ExampleRepository } from './infra/repositories/example.repository';
 import { CustomerRepository } from './infra/repositories/customer.repository';
 import { SubscriptionRepository } from './infra/repositories/subscription.repository';
 import { PaymentRepository } from './infra/repositories/payment.repository';
+// Business Services
 import { CustomerService } from './domain/services/customer.service';
 import { SubscriptionService } from './domain/services/subscription.service';
 import { PaymentService } from './domain/services/payment.service';
+import { ProductService } from './domain/services/product.service';
+import { PromotionService } from './domain/services/promotion.service';
+import { RefundService } from './domain/services/refund.service';
+import { AccountService } from './domain/services/account.service';
 import { BillingService } from './domain/services/billing.service';
 import { AppExceptionFilter } from './app-components/app-exception.filter';
 import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
@@ -51,6 +56,10 @@ import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
     CustomerService,
     SubscriptionService,
     PaymentService,
+    ProductService,
+    PromotionService,
+    RefundService,
+    AccountService,
     BillingService,
   ],
 })

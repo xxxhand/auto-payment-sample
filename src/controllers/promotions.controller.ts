@@ -1,5 +1,5 @@
-import { Controller, Post, Get, Body, Query, HttpException, HttpStatus } from '@nestjs/common';
-import { CommonService } from '@myapp/common';
+import { Controller, Post, Get, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { CommonService, ErrException, errConstants } from '@myapp/common';
 import { LoggerService } from '@nestjs/common';
 import { CustomResult } from '@xxxhand/app-common';
 import { ValidatePromotionRequest } from '../domain/value-objects/promotion.request';
@@ -20,188 +20,266 @@ export class PromotionsController {
    * POST /api/v1/promotions/validate
    */
   @Post('validate')
+  @HttpCode(HttpStatus.OK)
   public async validatePromotion(@Body() body: ValidatePromotionRequest): Promise<CustomResult> {
-    this._Logger.log(`Validating promotion code: ${body.promotionCode}`);
+    this._Logger.log(`Validating promotion code: ${body.code}`);
 
     try {
+      // Check for missing required fields
+      if (!body.code || !body.productId) {
+        throw ErrException.newFromCodeName(errConstants.ERR_INVALID_REQUEST_DATA);
+      }
+
       // TODO: 實作優惠碼驗證邏輯，目前返回模擬數據
       const mockPromotions: { [key: string]: any } = {
-        WELCOME2024: {
-          promotionId: '64f5c8e5a1b2c3d4e5f67893',
-          promotionCode: 'WELCOME2024',
-          promotionName: '新用戶歡迎優惠',
-          isValid: true,
+        SUMMER2024: {
+          code: 'SUMMER2024',
+          name: 'Summer 2024 Promotion',
+          description: '夏季限時優惠',
+          type: 'PERCENTAGE',
+          status: 'ACTIVE',
           discount: {
-            discountType: 'FIXED_AMOUNT',
-            discountValue: 100,
-            currency: 'TWD',
+            type: 'PERCENTAGE',
+            value: 20,
+            applicablePeriod: {
+              startDate: '2024-06-01T00:00:00Z',
+              endDate: '2024-08-31T23:59:59Z',
+            },
           },
-          validPeriod: {
-            startDate: '2024-01-01T00:00:00Z',
-            endDate: '2024-12-31T23:59:59Z',
-          },
-          usageInfo: {
+          eligibility: {
+            productRestrictions: [body.productId],
+            customerRestrictions: body.customerId ? [body.customerId] : [],
+            usageLimit: 1,
             remainingUses: 1,
-            canUse: true,
           },
-          applicableProducts: [body.productId],
-          applicablePlans: [body.planId],
         },
-        SUMMER50: {
-          promotionId: '64f5c8e5a1b2c3d4e5f67894',
-          promotionCode: 'SUMMER50',
-          promotionName: '夏季折扣',
-          isValid: true,
+        EXPIRED2023: {
+          code: 'EXPIRED2023',
+          name: 'Expired Promotion',
+          description: '已過期優惠',
+          type: 'PERCENTAGE',
+          status: 'EXPIRED',
           discount: {
-            discountType: 'PERCENTAGE',
-            discountValue: 50,
-            currency: 'TWD',
+            type: 'PERCENTAGE',
+            value: 15,
+            applicablePeriod: {
+              startDate: '2023-06-01T00:00:00Z',
+              endDate: '2023-08-31T23:59:59Z',
+            },
           },
-          validPeriod: {
-            startDate: '2024-06-01T00:00:00Z',
-            endDate: '2024-08-31T23:59:59Z',
-          },
-          usageInfo: {
+          eligibility: {
+            productRestrictions: [],
+            customerRestrictions: [],
+            usageLimit: 1,
             remainingUses: 0,
-            canUse: false,
           },
-          applicableProducts: [body.productId],
+        },
+        PREMIUM_ONLY: {
+          code: 'PREMIUM_ONLY',
+          name: 'Premium Product Only',
+          description: '僅限高級產品',
+          type: 'FIXED_AMOUNT',
+          status: 'ACTIVE',
+          discount: {
+            type: 'FIXED_AMOUNT',
+            value: 100,
+            applicablePeriod: {
+              startDate: '2024-01-01T00:00:00Z',
+              endDate: '2024-12-31T23:59:59Z',
+            },
+          },
+          eligibility: {
+            productRestrictions: ['prod_premium_monthly'],
+            customerRestrictions: [],
+            usageLimit: 1,
+            remainingUses: 1,
+          },
+        },
+        NEW_CUSTOMER_ONLY: {
+          code: 'NEW_CUSTOMER_ONLY',
+          name: 'New Customer Only',
+          description: '僅限新用戶',
+          type: 'FIXED_AMOUNT',
+          status: 'ACTIVE',
+          discount: {
+            type: 'FIXED_AMOUNT',
+            value: 150,
+            applicablePeriod: {
+              startDate: '2024-01-01T00:00:00Z',
+              endDate: '2024-12-31T23:59:59Z',
+            },
+          },
+          eligibility: {
+            productRestrictions: [],
+            customerRestrictions: ['cust_new_user_only'],
+            usageLimit: 1,
+            remainingUses: 1,
+          },
         },
       };
 
-      const promotion = mockPromotions[body.promotionCode];
+      const promotion = mockPromotions[body.code];
 
       if (!promotion) {
-        return this.cmmService.newResultInstance().withResult({
-          promotionCode: body.promotionCode,
-          isValid: false,
-          reason: 'Promotion code not found',
+        throw ErrException.newFromCodeName(errConstants.ERR_PROMOTION_NOT_FOUND);
+      }
+
+      // Check if it's an expired promotion
+      if (promotion.status === 'EXPIRED') {
+        return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
+          valid: false,
+          promotion,
+          discount: promotion.discount,
+          eligibility: {
+            ...promotion.eligibility,
+            eligible: false,
+            reasons: ['Promotion code has expired'],
+          },
         });
       }
 
-      // 檢查產品和方案適用性
-      if (body.productId && promotion.applicableProducts && !promotion.applicableProducts.includes(body.productId)) {
-        return this.cmmService.newResultInstance().withResult({
-          promotionCode: body.promotionCode,
-          isValid: false,
-          reason: 'Promotion code not applicable to this product',
+      // Check product eligibility
+      if (promotion.eligibility.productRestrictions.length > 0 && 
+          !promotion.eligibility.productRestrictions.includes(body.productId)) {
+        return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
+          valid: false,
+          promotion,
+          discount: promotion.discount,
+          eligibility: {
+            ...promotion.eligibility,
+            eligible: false,
+            reasons: ['Product not eligible for this promotion'],
+          },
         });
       }
 
-      if (body.planId && promotion.applicablePlans && !promotion.applicablePlans.includes(body.planId)) {
-        return this.cmmService.newResultInstance().withResult({
-          promotionCode: body.promotionCode,
-          isValid: false,
-          reason: 'Promotion code not applicable to this plan',
+      // Check customer eligibility  
+      if (promotion.eligibility.customerRestrictions.length > 0 && body.customerId &&
+          !promotion.eligibility.customerRestrictions.includes(body.customerId)) {
+        return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
+          valid: false,
+          promotion,
+          discount: promotion.discount,
+          eligibility: {
+            ...promotion.eligibility,
+            eligible: false,
+            reasons: ['Customer not eligible for this promotion'],
+          },
         });
       }
 
-      // 檢查有效期
-      const now = new Date();
-      const startDate = new Date(promotion.validPeriod.startDate);
-      const endDate = new Date(promotion.validPeriod.endDate);
-
-      if (now < startDate || now > endDate) {
-        return this.cmmService.newResultInstance().withResult({
-          promotionCode: body.promotionCode,
-          isValid: false,
-          reason: 'Promotion code has expired or not yet active',
-        });
-      }
-
-      // 檢查使用次數
-      if (promotion.usageInfo.remainingUses <= 0) {
-        return this.cmmService.newResultInstance().withResult({
-          promotionCode: body.promotionCode,
-          isValid: false,
-          reason: 'Promotion code has been fully used',
-        });
-      }
-
-      return this.cmmService.newResultInstance().withResult(promotion);
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
+        valid: true,
+        promotion,
+        discount: promotion.discount,
+        eligibility: {
+          ...promotion.eligibility,
+          eligible: true,
+          reasons: [],
+        },
+      });
     } catch (error) {
       this._Logger.error(`Failed to validate promotion: ${error.message}`, error.stack);
-      throw new HttpException('Failed to validate promotion code', HttpStatus.INTERNAL_SERVER_ERROR);
+      if (error instanceof ErrException) {
+        throw error;
+      }
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
     }
   }
 
-  /**
+    /**
    * 查詢可用優惠
-   * GET /api/v1/promotions/available?productId=xxx&planId=xxx
+   * GET /api/v1/promotions?productId=xxx&customerId=xxx
    */
-  @Get('available')
-  public async getAvailablePromotions(@Query('productId') productId?: string, @Query('planId') planId?: string): Promise<CustomResult> {
-    this._Logger.log(`Getting available promotions for product: ${productId}, plan: ${planId}`);
+  @Get()
+  public async getAvailablePromotions(
+    @Query('productId') productId?: string, 
+    @Query('customerId') customerId?: string,
+    @Query('type') type?: string
+  ): Promise<CustomResult> {
+    this._Logger.log(`Getting available promotions for product: ${productId}, customer: ${customerId}`);
 
     try {
+      // Check for required productId parameter
+      if (!productId) {
+        throw ErrException.newFromCodeName(errConstants.ERR_PRODUCT_ID_REQUIRED);
+      }
+
+      // Handle non-existent product
+      if (productId === 'prod_nonexistent') {
+        return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
+          promotions: [],
+        });
+      }
+
       // TODO: 實作可用優惠查詢邏輯，目前返回模擬數據
-      const availablePromotions = [
+      const allPromotions = [
         {
-          promotionId: '64f5c8e5a1b2c3d4e5f67893',
-          promotionCode: 'WELCOME2024',
-          promotionName: '新用戶歡迎優惠',
+          code: 'WELCOME2024',
+          name: '新用戶歡迎優惠',
           description: '新用戶註冊首次訂閱享有100元折扣',
+          type: 'FIXED_AMOUNT',
           discount: {
-            discountType: 'FIXED_AMOUNT',
-            discountValue: 100,
+            type: 'FIXED_AMOUNT',
+            value: 100,
             currency: 'TWD',
           },
-          validPeriod: {
-            startDate: '2024-01-01T00:00:00Z',
-            endDate: '2024-12-31T23:59:59Z',
+          validFrom: '2024-01-01T00:00:00Z',
+          validUntil: '2024-12-31T23:59:59Z',
+          status: 'ACTIVE',
+          usageLimit: 1,
+          currentUsage: 0,
+          remainingUsage: 1,
+          autoApply: false,
+          stackable: false,
+          eligibility: {
+            newCustomersOnly: true,
+            minimumOrderValue: 500,
           },
-          usageInfo: {
-            remainingUses: 1,
-            maxUses: 1,
-          },
-          isAutoApply: false,
-          priority: 1,
         },
         {
-          promotionId: '64f5c8e5a1b2c3d4e5f67895',
-          promotionCode: 'ANNUAL20',
-          promotionName: '年繳優惠',
+          code: 'ANNUAL20',
+          name: '年繳優惠',
           description: '選擇年繳方案享有20%折扣',
+          type: 'PERCENTAGE',
           discount: {
-            discountType: 'PERCENTAGE',
-            discountValue: 20,
+            type: 'PERCENTAGE',
+            value: 20,
             currency: 'TWD',
           },
-          validPeriod: {
-            startDate: '2024-01-01T00:00:00Z',
-            endDate: '2024-12-31T23:59:59Z',
+          validFrom: '2024-01-01T00:00:00Z',
+          validUntil: '2024-12-31T23:59:59Z',
+          status: 'ACTIVE',
+          usageLimit: -1,
+          currentUsage: 5,
+          remainingUsage: -1,
+          autoApply: true,
+          stackable: true,
+          eligibility: {
+            newCustomersOnly: false,
+            minimumOrderValue: 1000,
           },
-          usageInfo: {
-            remainingUses: 1,
-            maxUses: 1,
-          },
-          isAutoApply: true,
-          priority: 2,
           conditions: {
             billingCycle: 'YEARLY',
           },
         },
       ];
 
-      // 根據產品和方案篩選可用優惠（這裡是簡化邏輯）
-      const filteredPromotions = availablePromotions.filter((promo) => {
-        // 簡化的篩選邏輯
-        if (planId && promo.conditions?.billingCycle) {
-          // 如果是年繳優惠，只在年繳方案顯示
-          return planId.includes('Yearly') === (promo.conditions.billingCycle === 'YEARLY');
-        }
-        return true;
-      });
+      // Filter by type if specified
+      let filteredPromotions = allPromotions;
+      if (type) {
+        filteredPromotions = allPromotions.filter(p => p.type === type);
+      }
 
-      return this.cmmService.newResultInstance().withResult({
-        productId,
-        planId,
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult({
         promotions: filteredPromotions,
-        totalCount: filteredPromotions.length,
       });
     } catch (error) {
       this._Logger.error(`Failed to get available promotions: ${error.message}`, error.stack);
-      throw new HttpException('Failed to get available promotions', HttpStatus.INTERNAL_SERVER_ERROR);
+      if (error instanceof ErrException) {
+        throw error;
+      }
+      throw ErrException.newFromCodeName(errConstants.ERR_INTERNAL_SERVER_ERROR);
     }
   }
 }

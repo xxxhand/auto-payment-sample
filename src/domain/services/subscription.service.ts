@@ -176,4 +176,237 @@ export class SubscriptionService {
       canceled,
     };
   }
+
+  /**
+   * 變更訂閱方案
+   */
+  public async changePlan(
+    subscriptionId: string,
+    newProductId: string,
+    newPlanName: string,
+    newAmount: number,
+    effectiveDate: 'immediate' | 'next_billing_cycle' = 'next_billing_cycle',
+    prorationBehavior: 'create_prorations' | 'none' = 'create_prorations',
+  ): Promise<{
+    subscription: SubscriptionEntity;
+    pricingAdjustment?: {
+      oldAmount: number;
+      newAmount: number;
+      prorationAmount?: number;
+      nextBillingAmount: number;
+      effectiveDate: Date;
+    };
+  }> {
+    const subscription = await this.subscriptionRepository.findById(subscriptionId);
+    if (!subscription) {
+      throw new Error(`Subscription with ID ${subscriptionId} not found`);
+    }
+
+    if (!subscription.isActive()) {
+      throw new Error('Can only change plan for active subscriptions');
+    }
+
+    const oldAmount = subscription.amount;
+    const pricingAdjustment: any = {
+      oldAmount,
+      newAmount: newAmount,
+      nextBillingAmount: newAmount,
+      effectiveDate: effectiveDate === 'immediate' ? new Date() : subscription.currentPeriodEnd,
+    };
+
+    // 計算按比例計費
+    if (effectiveDate === 'immediate' && prorationBehavior === 'create_prorations') {
+      const daysRemaining = Math.ceil((subscription.currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      const totalDays = Math.ceil((subscription.currentPeriodEnd.getTime() - subscription.currentPeriodStart.getTime()) / (1000 * 60 * 60 * 24));
+      const prorationAmount = ((newAmount - oldAmount) * daysRemaining) / totalDays;
+      pricingAdjustment.prorationAmount = Math.round(prorationAmount);
+    }
+
+    // 更新訂閱資訊
+    subscription.planName = newPlanName;
+    subscription.amount = newAmount;
+    subscription.updatedAt = new Date();
+
+    if (effectiveDate === 'immediate') {
+      // 立即生效，更新當前計費週期
+      subscription.updateBillingPeriod(subscription.currentPeriodStart, subscription.currentPeriodEnd, subscription.currentPeriodEnd);
+    }
+
+    const updatedSubscription = await this.subscriptionRepository.save(subscription);
+
+    return {
+      subscription: updatedSubscription,
+      pricingAdjustment,
+    };
+  }
+
+  /**
+   * 暫停訂閱
+   */
+  public async pauseSubscription(
+    subscriptionId: string,
+    reason?: string,
+    resumeDate?: Date,
+  ): Promise<{
+    subscription: SubscriptionEntity;
+    pausedAt: Date;
+    scheduledResumeDate?: Date;
+  }> {
+    const subscription = await this.subscriptionRepository.findById(subscriptionId);
+    if (!subscription) {
+      throw new Error(`Subscription with ID ${subscriptionId} not found`);
+    }
+
+    if (!subscription.isActive()) {
+      throw new Error('Can only pause active subscriptions');
+    }
+
+    subscription.status = SubscriptionStatus.PAUSED; // 使用PAUSED作為暫停狀態
+    subscription.updatedAt = new Date();
+
+    const updatedSubscription = await this.subscriptionRepository.save(subscription);
+    const pausedAt = new Date();
+
+    return {
+      subscription: updatedSubscription,
+      pausedAt,
+      scheduledResumeDate: resumeDate,
+    };
+  }
+
+  /**
+   * 恢復暫停的訂閱
+   */
+  public async resumeSubscription(subscriptionId: string): Promise<{
+    subscription: SubscriptionEntity;
+    resumedAt: Date;
+    nextBillingDate: Date;
+  }> {
+    const subscription = await this.subscriptionRepository.findById(subscriptionId);
+    if (!subscription) {
+      throw new Error(`Subscription with ID ${subscriptionId} not found`);
+    }
+
+    if (subscription.isActive()) {
+      throw new Error('Subscription is not paused');
+    }
+
+    subscription.status = SubscriptionStatus.ACTIVE;
+    subscription.updatedAt = new Date();
+    
+    // 重新計算下次計費日期
+    const nextBillingDate = this.calculateNextBillingDate(new Date(), subscription.billingCycle);
+    subscription.updateBillingPeriod(new Date(), nextBillingDate, nextBillingDate);
+
+    const updatedSubscription = await this.subscriptionRepository.save(subscription);
+    
+    return {
+      subscription: updatedSubscription,
+      resumedAt: new Date(),
+      nextBillingDate,
+    };
+  }
+
+  /**
+   * 獲取方案變更選項
+   */
+  public async getPlanChangeOptions(subscriptionId: string): Promise<{
+    currentProduct: any;
+    availableProducts: any[];
+  }> {
+    const subscription = await this.subscriptionRepository.findById(subscriptionId);
+    if (!subscription) {
+      throw new Error(`Subscription with ID ${subscriptionId} not found`);
+    }
+
+    // 模擬當前產品信息
+    const currentProduct = {
+      productId: `prod_${subscription.planName.toLowerCase().replace(' ', '_')}`,
+      name: subscription.planName,
+      amount: subscription.amount,
+      currency: 'TWD',
+      billingCycle: subscription.billingCycle,
+    };
+
+    // 模擬可用的升級選項
+    const availableProducts = [
+      {
+        productId: 'prod_premium_monthly',
+        name: 'Premium Monthly',
+        pricing: { amount: 1999, currency: 'TWD' },
+        priceDifference: { amount: 1999 - subscription.amount, currency: 'TWD' },
+        estimatedChargeDate: subscription.currentPeriodEnd.toISOString(),
+        features: ['Advanced Analytics', 'Priority Support', 'Custom Integrations'],
+      },
+      {
+        productId: 'prod_enterprise_monthly',
+        name: 'Enterprise Monthly',
+        pricing: { amount: 4999, currency: 'TWD' },
+        priceDifference: { amount: 4999 - subscription.amount, currency: 'TWD' },
+        estimatedChargeDate: subscription.currentPeriodEnd.toISOString(),
+        features: ['All Premium Features', 'Dedicated Account Manager', 'SLA Guarantee'],
+      },
+    ].filter((product) => product.pricing.amount > subscription.amount);
+
+    return {
+      currentProduct,
+      availableProducts,
+    };
+  }
+
+  /**
+   * 處理訂閱退款申請
+   */
+  public async processRefund(
+    subscriptionId: string,
+    refundType: 'FULL' | 'PARTIAL' | 'PRORATED',
+    refundAmount?: { amount: number; currency: string },
+  ): Promise<{
+    refundId: string;
+    subscriptionId: string;
+    refundType: string;
+    refundAmount: { amount: number; currency: string };
+    status: string;
+    estimatedProcessingTime: string;
+  }> {
+    const subscription = await this.subscriptionRepository.findById(subscriptionId);
+    if (!subscription) {
+      throw new Error(`Subscription with ID ${subscriptionId} not found`);
+    }
+
+    let calculatedRefundAmount: { amount: number; currency: string };
+
+    switch (refundType) {
+      case 'FULL':
+        calculatedRefundAmount = { amount: subscription.amount, currency: 'TWD' };
+        break;
+      case 'PARTIAL':
+        if (!refundAmount) {
+          throw new Error('Refund amount is required for partial refunds');
+        }
+        calculatedRefundAmount = refundAmount;
+        break;
+      case 'PRORATED':
+        // 按剩餘天數計算
+        const daysRemaining = Math.ceil((subscription.currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        const totalDays = Math.ceil((subscription.currentPeriodEnd.getTime() - subscription.currentPeriodStart.getTime()) / (1000 * 60 * 60 * 24));
+        const prorationAmount = Math.round((subscription.amount * daysRemaining) / totalDays);
+        calculatedRefundAmount = { amount: prorationAmount, currency: 'TWD' };
+        break;
+      default:
+        throw new Error(`Unsupported refund type: ${refundType}`);
+    }
+
+    // 生成退款ID
+    const refundId = `ref_${Date.now()}_${subscriptionId.slice(-6)}`;
+
+    return {
+      refundId,
+      subscriptionId,
+      refundType,
+      refundAmount: calculatedRefundAmount,
+      status: 'REQUESTED',
+      estimatedProcessingTime: '3-5 business days',
+    };
+  }
 }

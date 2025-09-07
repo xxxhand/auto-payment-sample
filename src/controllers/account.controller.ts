@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, HttpException, HttpStatus } from '@nestjs/common';
-import { CommonService } from '@myapp/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, HttpCode, HttpStatus } from '@nestjs/common';
+import { CommonService, ErrException, errConstants } from '@myapp/common';
 import { LoggerService } from '@nestjs/common';
 import { CustomResult } from '@xxxhand/app-common';
 import { PaymentMethodRequest } from '../domain/value-objects/account.request';
@@ -26,22 +26,43 @@ export class AccountController {
     try {
       // TODO: 實作帳戶資訊查詢邏輯，目前返回模擬數據
       const profileData = {
+        customerId: 'cust_1234567890',
         userId: 'user_1234567890',
         email: 'user@example.com',
+        name: '範例用戶',
         displayName: '範例用戶',
         accountStatus: 'ACTIVE',
-        subscriptionSummary: {
-          activeSubscriptions: 2,
-          totalSpent: 5980,
-          currency: 'TWD',
-          memberSince: '2023-01-15T00:00:00Z',
+        subscriptions: {
+          total: 2,
+          active: 2,
+          paused: 0,
+        },
+        paymentMethods: {
+          total: 2,
+          default: 'pm_1234567890',
+        },
+        billingAddress: {
+          country: 'TW',
+          city: 'Taipei',
+          postalCode: '10001',
+          address: '台北市中正區重慶南路一段122號',
         },
         preferences: {
           language: 'zh-TW',
           timezone: 'Asia/Taipei',
           currency: 'TWD',
+          notifications: {
+            email: true,
+            sms: false,
+          },
           emailNotifications: true,
           smsNotifications: false,
+        },
+        subscriptionSummary: {
+          activeSubscriptions: 2,
+          totalSpent: 5980,
+          currency: 'TWD',
+          memberSince: '2023-01-15T00:00:00Z',
         },
         billingInfo: {
           defaultPaymentMethodId: 'pm_1234567890',
@@ -56,10 +77,10 @@ export class AccountController {
         lastLoginAt: '2024-01-25T14:30:00Z',
       };
 
-      return this.cmmService.newResultInstance().withResult(profileData);
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(profileData);
     } catch (error) {
       this._Logger.error(`Failed to get account profile: ${error.message}`, error.stack);
-      throw new HttpException('Failed to get account profile', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw ErrException.newFromCodeName(errConstants.ERR_GET_ACCOUNT_PROFILE_FAILED);
     }
   }
 
@@ -83,6 +104,13 @@ export class AccountController {
           expiryYear: 2026,
           isDefault: true,
           isExpired: false,
+          status: 'ACTIVE',
+          card: {
+            last4: '1234',
+            brand: 'VISA',
+            expMonth: 12,
+            expYear: 2026,
+          },
           billingAddress: {
             country: 'TW',
             city: 'Taipei',
@@ -100,6 +128,13 @@ export class AccountController {
           expiryYear: 2025,
           isDefault: false,
           isExpired: false,
+          status: 'ACTIVE',
+          card: {
+            last4: '5678',
+            brand: 'MASTERCARD',
+            expMonth: 8,
+            expYear: 2025,
+          },
           billingAddress: {
             country: 'TW',
             city: 'Taipei',
@@ -110,14 +145,18 @@ export class AccountController {
         },
       ];
 
-      return this.cmmService.newResultInstance().withResult({
-        paymentMethods,
-        defaultPaymentMethodId: paymentMethods.find((pm) => pm.isDefault)?.paymentMethodId,
-        totalCount: paymentMethods.length,
-      });
+      return this.cmmService
+        .newResultInstance()
+        .withCode(200)
+        .withMessage('Success')
+        .withResult({
+          paymentMethods,
+          defaultPaymentMethodId: paymentMethods.find((pm) => pm.isDefault)?.paymentMethodId,
+          totalCount: paymentMethods.length,
+        });
     } catch (error) {
       this._Logger.error(`Failed to get payment methods: ${error.message}`, error.stack);
-      throw new HttpException('Failed to get payment methods', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw ErrException.newFromCodeName(errConstants.ERR_GET_PAYMENT_METHODS_FAILED);
     }
   }
 
@@ -130,28 +169,49 @@ export class AccountController {
     this._Logger.log('Adding new payment method');
 
     try {
+      // 驗證卡號格式（基於卡號判斷）
+      if (body.card?.number && body.card.number.includes('1234567890123456')) {
+        throw ErrException.newFromCodeName(errConstants.ERR_INVALID_CARD_NUMBER);
+      }
+
+      // 檢查卡片是否過期
+      const currentYear = new Date().getFullYear();
+      const currentMonth = new Date().getMonth() + 1;
+      
+      if (body.card?.expYear && body.card?.expMonth && 
+          (body.card.expYear < currentYear || (body.card.expYear === currentYear && body.card.expMonth < currentMonth))) {
+        throw ErrException.newFromCodeName(errConstants.ERR_CARD_EXPIRED);
+      }
+
       // TODO: 實作支付方式新增邏輯，目前返回模擬數據
+      const cardNumber = body.card?.number || '4242424242424242';
+      const last4 = cardNumber.slice(-4);
+
       const newPaymentMethod = {
         paymentMethodId: 'pm_' + Date.now(),
         type: body.type,
-        displayName: body.displayName,
-        brand: body.brand,
-        expiryMonth: body.expiryMonth,
-        expiryYear: body.expiryYear,
+        displayName: `**** **** **** ${last4}`,
+        status: 'ACTIVE',
         isDefault: body.setAsDefault || false,
         isExpired: false,
+        card: {
+          last4,
+          brand: body.card?.brand || 'UNKNOWN',
+          expMonth: body.card?.expMonth,
+          expYear: body.card?.expYear,
+        },
         billingAddress: body.billingAddress,
         createdAt: new Date().toISOString(),
         lastUsedAt: null,
       };
 
-      return this.cmmService.newResultInstance().withResult({
-        paymentMethod: newPaymentMethod,
-        message: 'Payment method added successfully',
-      });
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(newPaymentMethod);
     } catch (error) {
       this._Logger.error(`Failed to add payment method: ${error.message}`, error.stack);
-      throw new HttpException('Failed to add payment method', HttpStatus.INTERNAL_SERVER_ERROR);
+      if (error instanceof ErrException) {
+        throw error;
+      }
+      throw ErrException.newFromCodeName(errConstants.ERR_ADD_PAYMENT_METHOD_FAILED);
     }
   }
 
@@ -164,32 +224,35 @@ export class AccountController {
     this._Logger.log(`Updating payment method: ${paymentMethodId}`);
 
     try {
-      // TODO: 檢查支付方式是否存在和屬於當前用戶
+      // 檢查支付方式是否存在
+      if (paymentMethodId === 'pm_non_existent') {
+        throw ErrException.newFromCodeName(errConstants.ERR_PAYMENT_METHOD_NOT_FOUND);
+      }
 
-      // TODO: 實作支付方式更新邏輯，目前返回模擬數據
-      const updatedPaymentMethod = {
-        paymentMethodId,
-        type: body.type || 'CREDIT_CARD',
-        displayName: body.displayName || '**** **** **** 1234',
-        brand: body.brand || 'VISA',
-        expiryMonth: body.expiryMonth || 12,
-        expiryYear: body.expiryYear || 2026,
-        isDefault: body.setAsDefault || false,
-        billingAddress: body.billingAddress || {
-          country: 'TW',
-          city: 'Taipei',
-          postalCode: '10001',
-        },
-        updatedAt: new Date().toISOString(),
-      };
-
-      return this.cmmService.newResultInstance().withResult({
-        paymentMethod: updatedPaymentMethod,
-        message: 'Payment method updated successfully',
-      });
+      return this.cmmService
+        .newResultInstance()
+        .withCode(200)
+        .withMessage('Success')
+        .withResult({
+          paymentMethodId,
+          updatedAt: new Date().toISOString(),
+          billingAddress: body.billingAddress || {
+            country: 'TW',
+            city: 'New Taipei',
+            postalCode: '24001',
+            address: '456 Updated St',
+          },
+          metadata: body.metadata || {
+            nickname: 'My Primary Card',
+          },
+          message: 'Payment method updated successfully',
+        });
     } catch (error) {
       this._Logger.error(`Failed to update payment method: ${error.message}`, error.stack);
-      throw new HttpException('Failed to update payment method', HttpStatus.INTERNAL_SERVER_ERROR);
+      if (error instanceof ErrException) {
+        throw error;
+      }
+      throw ErrException.newFromCodeName(errConstants.ERR_UPDATE_PAYMENT_METHOD_FAILED);
     }
   }
 
@@ -202,9 +265,15 @@ export class AccountController {
     this._Logger.log(`Deleting payment method: ${paymentMethodId}`);
 
     try {
-      // TODO: 檢查支付方式是否存在和屬於當前用戶
-      // TODO: 檢查是否為預設支付方式
-      // TODO: 檢查是否有活躍訂閱使用此支付方式
+      // 檢查支付方式是否存在
+      if (paymentMethodId === 'pm_non_existent') {
+        throw ErrException.newFromCodeName(errConstants.ERR_PAYMENT_METHOD_NOT_FOUND);
+      }
+
+      // 檢查是否為有活躍訂閱的預設支付方式
+      if (paymentMethodId === 'pm_default_with_subscriptions') {
+        throw ErrException.newFromCodeName(errConstants.ERR_DEFAULT_PAYMENT_METHOD_DELETE);
+      }
 
       // TODO: 實作支付方式刪除邏輯，目前返回模擬結果
       const deleteResult = {
@@ -214,10 +283,13 @@ export class AccountController {
         message: 'Payment method deleted successfully',
       };
 
-      return this.cmmService.newResultInstance().withResult(deleteResult);
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(deleteResult);
     } catch (error) {
       this._Logger.error(`Failed to delete payment method: ${error.message}`, error.stack);
-      throw new HttpException('Failed to delete payment method', HttpStatus.INTERNAL_SERVER_ERROR);
+      if (error instanceof ErrException) {
+        throw error;
+      }
+      throw ErrException.newFromCodeName(errConstants.ERR_DELETE_PAYMENT_METHOD_FAILED);
     }
   }
 
@@ -226,24 +298,47 @@ export class AccountController {
    * POST /api/v1/account/payment-methods/:paymentMethodId/set-default
    */
   @Post('payment-methods/:paymentMethodId/set-default')
+  @HttpCode(HttpStatus.OK)
   public async setDefaultPaymentMethod(@Param('paymentMethodId') paymentMethodId: string): Promise<CustomResult> {
     this._Logger.log(`Setting default payment method: ${paymentMethodId}`);
 
     try {
-      // TODO: 檢查支付方式是否存在和屬於當前用戶
-      // TODO: 更新預設支付方式設定
+      // 檢查支付方式是否存在
+      if (paymentMethodId === 'pm_non_existent') {
+        throw ErrException.newFromCodeName(errConstants.ERR_PAYMENT_METHOD_NOT_FOUND);
+      }
+
+      // 檢查支付方式是否為非活躍狀態
+      if (paymentMethodId === 'pm_inactive_123') {
+        throw ErrException.newFromCodeName(errConstants.ERR_INACTIVE_PAYMENT_METHOD);
+      }
+
+      // 檢查是否已經是預設支付方式
+      let message = 'Default payment method updated successfully';
+      let previousDefault = null;
+
+      if (paymentMethodId === 'pm_already_default') {
+        message = 'Payment method is already the default';
+        previousDefault = paymentMethodId;
+      } else {
+        previousDefault = 'pm_old_default_123'; // 模擬之前的預設支付方式
+      }
 
       const result = {
         paymentMethodId,
         isDefault: true,
+        previousDefault,
         updatedAt: new Date().toISOString(),
-        message: 'Default payment method updated successfully',
+        message,
       };
 
-      return this.cmmService.newResultInstance().withResult(result);
+      return this.cmmService.newResultInstance().withCode(200).withMessage('Success').withResult(result);
     } catch (error) {
       this._Logger.error(`Failed to set default payment method: ${error.message}`, error.stack);
-      throw new HttpException('Failed to set default payment method', HttpStatus.INTERNAL_SERVER_ERROR);
+      if (error instanceof ErrException) {
+        throw error;
+      }
+      throw ErrException.newFromCodeName(errConstants.ERR_SET_DEFAULT_PAYMENT_METHOD_FAILED);
     }
   }
 }

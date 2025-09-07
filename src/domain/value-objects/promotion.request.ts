@@ -3,7 +3,7 @@ import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 export class ValidatePromotionRequest {
   @IsString()
   @IsNotEmpty()
-  promotionCode: string;
+  code: string;
 
   @IsString()
   @IsOptional()
@@ -12,4 +12,8 @@ export class ValidatePromotionRequest {
   @IsString()
   @IsOptional()
   planId?: string;
+
+  @IsString()
+  @IsOptional()
+  customerId?: string;
 }

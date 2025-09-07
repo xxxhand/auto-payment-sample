@@ -19,14 +19,40 @@ class BillingAddressDto {
   address?: string;
 }
 
+class CardDto {
+  @IsString()
+  @IsOptional()
+  number?: string;
+
+  @IsNumber()
+  @IsOptional()
+  expMonth?: number;
+
+  @IsNumber()
+  @IsOptional()
+  expYear?: number;
+
+  @IsString()
+  @IsOptional()
+  cvc?: string;
+
+  @IsString()
+  @IsOptional()
+  holderName?: string;
+
+  @IsString()
+  @IsOptional()
+  brand?: string;
+}
+
 export class PaymentMethodRequest {
   @IsString()
   @IsNotEmpty()
   type: string; // CREDIT_CARD, DEBIT_CARD, PAYPAL, etc.
 
   @IsString()
-  @IsNotEmpty()
-  displayName: string;
+  @IsOptional()
+  displayName?: string;
 
   @IsString()
   @IsOptional()
@@ -48,6 +74,14 @@ export class PaymentMethodRequest {
   @Type(() => BillingAddressDto)
   @IsOptional()
   billingAddress?: BillingAddressDto;
+
+  @ValidateNested()
+  @Type(() => CardDto)
+  @IsOptional()
+  card?: CardDto;
+
+  @IsOptional()
+  metadata?: any;
 
   // 用於信用卡新增時的敏感資料（實際應用中需要加密處理）
   @IsString()
