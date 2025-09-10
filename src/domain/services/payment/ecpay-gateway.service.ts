@@ -108,8 +108,8 @@ export class ECPayGateway implements IECPayGateway {
   /**
    * 確認支付 (不適用於 ECPay)
    */
-  async confirmPayment(paymentId: string, _options?: PaymentConfirmOptions): Promise<PaymentResult> {
-    this.logger.warn('ECPay does not support payment confirmation', { paymentId });
+  async confirmPayment(paymentId: string, options?: PaymentConfirmOptions): Promise<PaymentResult> {
+    this.logger.warn('ECPay does not support payment confirmation', { paymentId, options });
 
     // 查詢交易狀態代替確認
     const tradeInfo = await this.queryTradeInfo(paymentId);
@@ -175,8 +175,8 @@ export class ECPayGateway implements IECPayGateway {
   /**
    * 處理 Webhook
    */
-  async handleWebhook(payload: any, _signature?: string): Promise<WebhookResult> {
-    this.logger.debug('Handling ECPay webhook', payload);
+  async handleWebhook(payload: any, signature?: string): Promise<WebhookResult> {
+    this.logger.debug('Handling ECPay webhook', { payload, signature });
 
     try {
       const params = payload as ECPayCallbackParams;

@@ -3,7 +3,7 @@ import { BillingPlanEntity } from '../../domain/entities/billing-plan.entity';
 import { BillingPlanModel, IBillingPlanDocument } from '../models/billing-plan.model';
 import { Money } from '../../domain/value-objects/money';
 import { BillingCycleVO } from '../../domain/value-objects/billing-cycle';
-import { PlanStatus, PlanType } from '../../domain/enums/codes.const';
+import { PlanStatus } from '../../domain/enums/codes.const';
 
 @Injectable()
 export class BillingPlanRepository {

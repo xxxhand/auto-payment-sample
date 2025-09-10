@@ -44,17 +44,17 @@ export class RuleEvaluator implements IRuleEvaluator {
   async executeRuleActions(rule: IRuleDefinition, context: IRuleExecutionContext): Promise<any> {
     const results: any[] = [];
 
-    try {
-      for (const action of rule.actions) {
+    for (const action of rule.actions) {
+      try {
         const result = await this.executeAction(action, context);
         results.push(result);
+      } catch (error) {
+        this.logger.error(`Failed to execute action ${action.actionType} for rule ${rule.id}`, error);
+        throw error;
       }
-
-      return results.length === 1 ? results[0] : results;
-    } catch (error) {
-      this.logger.error(`Error executing actions for rule ${rule.id}: ${error.message}`, error.stack);
-      throw error;
     }
+
+    return results.length === 1 ? results[0] : results;
   }
 
   /**
@@ -205,7 +205,7 @@ export class RuleEvaluator implements IRuleEvaluator {
   /**
    * 執行免費期間動作
    */
-  private executeApplyFreePeriodAction(action: IRuleAction, _context: IRuleExecutionContext): any {
+  private executeApplyFreePeriodAction(action: IRuleAction, context: IRuleExecutionContext): any {
     const { periodCount, periodUnit, description } = action.parameters;
 
     return {
@@ -214,13 +214,14 @@ export class RuleEvaluator implements IRuleEvaluator {
       periodUnit,
       description,
       appliedAt: new Date(),
+      contextData: context.data,
     };
   }
 
   /**
    * 執行修改重試次數動作
    */
-  private executeModifyRetryCountAction(action: IRuleAction, _context: IRuleExecutionContext): any {
+  private executeModifyRetryCountAction(action: IRuleAction, context: IRuleExecutionContext): any {
     const { retryCount, reason } = action.parameters;
 
     return {
@@ -228,13 +229,14 @@ export class RuleEvaluator implements IRuleEvaluator {
       newRetryCount: retryCount,
       reason,
       appliedAt: new Date(),
+      contextTimestamp: context.timestamp,
     };
   }
 
   /**
    * 執行設定重試延遲動作
    */
-  private executeSetRetryDelayAction(action: IRuleAction, _context: IRuleExecutionContext): any {
+  private executeSetRetryDelayAction(action: IRuleAction, context: IRuleExecutionContext): any {
     const { delayMinutes, reason } = action.parameters;
 
     return {
@@ -242,6 +244,7 @@ export class RuleEvaluator implements IRuleEvaluator {
       delayMinutes,
       reason,
       nextRetryTime: new Date(Date.now() + delayMinutes * 60 * 1000),
+      contextTimestamp: context.timestamp,
     };
   }
 
@@ -262,13 +265,14 @@ export class RuleEvaluator implements IRuleEvaluator {
   /**
    * 執行拒絕退款動作
    */
-  private executeRejectRefundAction(action: IRuleAction, _context: IRuleExecutionContext): any {
+  private executeRejectRefundAction(action: IRuleAction, context: IRuleExecutionContext): any {
     const { reason } = action.parameters;
 
     return {
       actionType: 'REJECT_REFUND',
       reason,
       rejectedAt: new Date(),
+      contextData: context.data,
     };
   }
 

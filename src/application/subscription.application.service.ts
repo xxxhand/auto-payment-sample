@@ -193,8 +193,6 @@ export class SubscriptionApplicationService {
       throw new Error(`Subscription ${subscriptionId} not found`);
     }
 
-    const result = subscription.pause(request.reason, 'system');
-
     // 保存暫停原因和恢復日期到 metadata
     const metadata: any = { ...subscription.metadata };
     if (request.reason) {

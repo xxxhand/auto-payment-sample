@@ -637,8 +637,14 @@ export class SubscriptionEntity extends BaseEntity {
   /**
    * 更新計費週期 (向後兼容方法)
    */
-  public updateBillingPeriod(startDate: Date, endDate: Date, _nextBillingDate?: Date): void {
+  public updateBillingPeriod(startDate: Date, endDate: Date, nextBillingDate?: Date): void {
     this.currentPeriod = new BillingPeriod(startDate, endDate);
+
+    // 如果提供了下次計費日期，更新到 metadata 中
+    if (nextBillingDate) {
+      this.metadata.nextBillingDate = nextBillingDate.toISOString();
+    }
+
     this.touch();
   }
 

@@ -59,12 +59,17 @@ export class PercentageDiscountRule implements IPromotionRule {
     return true;
   }
 
-  calculateDiscount(originalAmount: Money, _context: PromotionContext): Money {
+  calculateDiscount(originalAmount: Money, context: PromotionContext): Money {
     let discount = originalAmount.percentage(this.discountPercentage);
 
     // 應用最大折扣限制
     if (this.maxDiscount && discount.isGreaterThan(this.maxDiscount)) {
       discount = this.maxDiscount;
+    }
+
+    // 記錄應用上下文以供審計
+    if (context.metadata) {
+      context.metadata.discountApplied = this.discountPercentage;
     }
 
     return discount;
@@ -83,11 +88,16 @@ export class FixedAmountDiscountRule implements IPromotionRule {
     private readonly minimumAmount?: Money,
   ) {}
 
-  isApplicable(_context: PromotionContext): boolean {
-    return true;
+  isApplicable(context: PromotionContext): boolean {
+    // 記錄檢查的上下文信息
+    const isApplicable = true;
+    if (context.metadata) {
+      context.metadata.fixedAmountRuleChecked = true;
+    }
+    return isApplicable;
   }
 
-  calculateDiscount(originalAmount: Money, _context: PromotionContext): Money {
+  calculateDiscount(originalAmount: Money, context: PromotionContext): Money {
     // 檢查最低金額要求
     if (this.minimumAmount && originalAmount.isLessThan(this.minimumAmount)) {
       return Money.zero(originalAmount.currency);
@@ -96,6 +106,11 @@ export class FixedAmountDiscountRule implements IPromotionRule {
     // 折扣不能超過原始金額
     if (this.discountAmount.isGreaterThan(originalAmount)) {
       return originalAmount;
+    }
+
+    // 記錄應用上下文
+    if (context.metadata) {
+      context.metadata.fixedAmountApplied = this.discountAmount.amount;
     }
 
     return this.discountAmount;
@@ -117,7 +132,12 @@ export class FirstSubscriptionDiscountRule implements IPromotionRule {
     return context.isFirstSubscription;
   }
 
-  calculateDiscount(originalAmount: Money, _context: PromotionContext): Money {
+  calculateDiscount(originalAmount: Money, context: PromotionContext): Money {
+    // 記錄首次訂閱折扣的應用
+    if (context.metadata) {
+      context.metadata.firstSubscriptionDiscountApplied = this.discountPercentage;
+    }
+
     return originalAmount.percentage(this.discountPercentage);
   }
 }
@@ -146,6 +166,11 @@ export class StagedDiscountRule implements IPromotionRule {
 
     if (!applicableStage) {
       return Money.zero(originalAmount.currency);
+    }
+
+    // 記錄應用的階段到上下文
+    if (context.metadata) {
+      context.metadata.appliedStage = applicableStage;
     }
 
     return originalAmount.percentage(applicableStage.discountPercentage);

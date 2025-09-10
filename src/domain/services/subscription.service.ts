@@ -248,28 +248,17 @@ export class SubscriptionService {
       pricingAdjustment.prorationAmount = Math.round(prorationAmount);
     }
 
-    // 計劃變更請求 (需要在實體中實現計劃變更邏輯)
-    // TODO: 實現正確的計劃變更邏輯，這裡只是臨時的兼容性代碼
-    const changeRequest = {
-      oldAmount,
-      newAmount,
-      newPlanName,
-      effectiveDate: effectiveDate === 'immediate' ? new Date() : subscription.currentPeriodEnd,
-    };
-
-    // 計算按比例計費
-    if (effectiveDate === 'immediate' && prorationBehavior === 'create_prorations') {
-      const daysRemaining = Math.ceil((subscription.currentPeriodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-      const totalDays = Math.ceil((subscription.currentPeriodEnd.getTime() - subscription.currentPeriodStart.getTime()) / (1000 * 60 * 60 * 24));
-      const prorationAmount = ((newAmount - oldAmount) * daysRemaining) / totalDays;
-      pricingAdjustment.prorationAmount = Math.round(prorationAmount);
-    }
-
-    // 更新訂閱元資料 (臨時解決方案，直到實現正確的計劃變更邏輯)
+    // 記錄變更信息到 metadata 中
     subscription.updateMetadata({
       planName: newPlanName,
       amount: newAmount,
       lastPlanChange: new Date().toISOString(),
+      changeRequest: {
+        oldAmount,
+        newAmount,
+        newPlanName,
+        effectiveDate: effectiveDate === 'immediate' ? new Date() : subscription.currentPeriodEnd,
+      },
     });
 
     if (effectiveDate === 'immediate') {

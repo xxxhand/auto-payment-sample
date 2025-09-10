@@ -1,14 +1,8 @@
-import { Controller, Post, Get, Put, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, HttpCode, HttpStatus } from '@nestjs/common';
 import { CommonService, ErrException, errConstants } from '@myapp/common';
 import { LoggerService } from '@nestjs/common';
 import { CustomResult } from '@xxxhand/app-common';
-import {
-  SubscriptionApplicationService,
-  CreateSubscriptionRequest as AppCreateSubscriptionRequest,
-  CancelSubscriptionRequest as AppCancelSubscriptionRequest,
-  PlanChangeRequest as AppPlanChangeRequest,
-  PauseSubscriptionRequest as AppPauseSubscriptionRequest,
-} from '../application/subscription.application.service';
+import { SubscriptionApplicationService, CancelSubscriptionRequest as AppCancelSubscriptionRequest } from '../application/subscription.application.service';
 
 interface CreateSubscriptionRequest {
   productId: string;
@@ -25,27 +19,9 @@ interface CreateSubscriptionRequest {
   trialDays?: number;
 }
 
-interface CancelSubscriptionRequest {
-  reason?: string;
-}
-
-interface PlanChangeRequest {
-  newPlanName: string;
-  newAmount: number;
-  billingCycle?: 'MONTHLY' | 'QUARTERLY' | 'ANNUALLY';
-  effectiveDate?: string;
-  prorationMode?: 'IMMEDIATE' | 'END_OF_PERIOD';
-}
-
 interface PauseSubscriptionRequest {
   reason?: string;
   resumeDate?: string;
-}
-
-interface RefundSubscriptionRequest {
-  refundType: 'FULL' | 'PARTIAL';
-  amount?: number;
-  reason: string;
 }
 
 @Controller({

@@ -91,6 +91,37 @@ export class SubscriptionStateMachine {
   }
 
   /**
+   * 整合規則引擎的狀態轉換驗證
+   */
+  static validateTransitionWithRules(
+    fromStatus: SubscriptionStatus,
+    toStatus: SubscriptionStatus,
+    context: TransitionContext,
+    rulesEngineResult?: {
+      shouldTransition: boolean;
+      reason?: string;
+      metadata?: Record<string, any>;
+    },
+  ): TransitionResult {
+    // 先執行基本驗證
+    const basicValidation = this.validateTransition(fromStatus, toStatus, context);
+    if (!basicValidation.isValid) {
+      return basicValidation;
+    }
+
+    // 如果有規則引擎結果，優先採用
+    if (rulesEngineResult) {
+      if (!rulesEngineResult.shouldTransition) {
+        return TransitionResult.invalid(rulesEngineResult.reason || 'Transition blocked by business rules', rulesEngineResult.metadata);
+      }
+
+      return TransitionResult.valid(rulesEngineResult.reason || basicValidation.message, { ...basicValidation.metadata, ...rulesEngineResult.metadata });
+    }
+
+    return basicValidation;
+  }
+
+  /**
    * 取得所有可能的下一個狀態
    */
   static getPossibleNextStates(currentStatus: SubscriptionStatus): SubscriptionStatus[] {
@@ -157,6 +188,14 @@ export class SubscriptionStateMachine {
       return TransitionResult.invalid('Invalid state for retry transition');
     }
 
+    // 整合重試策略引擎決策
+    if (context.metadata?.retryDecision) {
+      const retryDecision = context.metadata.retryDecision;
+      if (!retryDecision.shouldRetry) {
+        return TransitionResult.invalid(retryDecision.reason || 'Retry not allowed by strategy engine');
+      }
+    }
+
     if (!context.metadata?.isRetriable) {
       return TransitionResult.invalid('Payment failure is not retriable');
     }
@@ -168,7 +207,10 @@ export class SubscriptionStateMachine {
       return TransitionResult.invalid('Maximum retry attempts exceeded');
     }
 
-    return TransitionResult.valid('Subscription entered retry state');
+    return TransitionResult.valid('Subscription entered retry state', {
+      nextRetryDate: context.metadata?.nextRetryDate,
+      retryStrategy: context.metadata?.retryStrategy,
+    });
   }
 
   /**

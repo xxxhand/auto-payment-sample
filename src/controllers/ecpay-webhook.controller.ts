@@ -71,7 +71,7 @@ export class ECPayWebhookController {
   /**
    * 處理支付結果的業務邏輯
    */
-  private async processPaymentResult(params: ECPayCallbackParams, _webhookResult: any) {
+  private async processPaymentResult(params: ECPayCallbackParams, webhookResult: any) {
     const { MerchantTradeNo, RtnCode, TradeAmt, PaymentDate, PaymentType } = params;
 
     try {
@@ -83,6 +83,7 @@ export class ECPayWebhookController {
           amount: TradeAmt,
           paymentDate: PaymentDate,
           paymentType: PaymentType,
+          webhookResult,
         });
 
         // TODO: 更新訂單狀態、發送通知等業務邏輯

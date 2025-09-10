@@ -201,6 +201,8 @@ export enum RefundStatus {
  * 重試策略類型列舉
  */
 export enum RetryStrategyType {
+  /** 無重試 */
+  NONE = 'NONE',
   /** 線性間隔 */
   LINEAR = 'LINEAR',
   /** 指數退避 */

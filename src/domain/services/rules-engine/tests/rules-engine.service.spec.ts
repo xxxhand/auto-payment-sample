@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Logger } from '@nestjs/common';
 import { RulesEngine } from '../rules-engine.service';
 import { RuleRegistry } from '../rule-registry.service';
 import { RuleEvaluator } from '../rule-evaluator.service';
@@ -8,7 +7,6 @@ import { IRuleDefinition, IRuleExecutionContext, RuleType, RuleOperator } from '
 describe('RulesEngine', () => {
   let service: RulesEngine;
   let ruleRegistry: RuleRegistry;
-  let ruleEvaluator: RuleEvaluator;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -17,7 +15,7 @@ describe('RulesEngine', () => {
 
     service = module.get<RulesEngine>(RulesEngine);
     ruleRegistry = module.get<RuleRegistry>(RuleRegistry);
-    ruleEvaluator = module.get<RuleEvaluator>(RuleEvaluator);
+    // ruleEvaluator is available but not used in these specific tests
   });
 
   it('should be defined', () => {
