@@ -225,6 +225,8 @@ export enum BillingAttemptStatus {
   SUCCEEDED = 'SUCCEEDED',
   /** 失敗 */
   FAILED = 'FAILED',
+  /** 已取消 */
+  CANCELLED = 'CANCELLED',
   /** 已跳過 */
   SKIPPED = 'SKIPPED',
 }
@@ -239,6 +241,8 @@ export enum BillingAttemptType {
   MANUAL_RETRY = 'MANUAL_RETRY',
   /** 自動重試 */
   AUTO_RETRY = 'AUTO_RETRY',
+  /** 重試 */
+  RETRY = 'RETRY',
   /** 立即計費 */
   IMMEDIATE = 'IMMEDIATE',
 }
