@@ -46,56 +46,47 @@ export class SubscriptionsController {
   @HttpCode(HttpStatus.CREATED)
   public async createSubscription(@Body() body: CreateSubscriptionRequest): Promise<CustomResult> {
     this._Logger.log(`Creating subscription for product: ${body.productId}`);
-
-    try {
-      // Mock implementation for testing
-      if (!body.productId || !body.paymentMethodId) {
-        throw ErrException.newFromCodeName(errConstants.ERR_INVALID_REQUEST_DATA);
-      }
-
-      // 檢查無效的產品ID
-      if (body.productId === 'prod_invalid') {
-        throw ErrException.newFromCodeName(errConstants.ERR_INVALID_REQUEST_DATA);
-      }
-
-      return this.cmmService
-        .newResultInstance()
-        .withCode(200)
-        .withMessage('Success')
-        .withResult({
-          subscriptionId: 'sub_' + Date.now(),
-          productId: body.productId,
-          paymentMethodId: body.paymentMethodId,
-          customerId: body.customerId || 'cust_default_123',
-          status: 'ACTIVE',
-          planName: 'Basic Plan',
-          currentPeriod: {
-            startDate: new Date().toISOString(),
-            endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-          pricing: {
-            baseAmount: 999,
-            finalAmount: 999,
-            amount: 999,
-            currency: 'TWD',
-            interval: 'month',
-          },
-          billingCycle: 'MONTHLY',
-          currentPeriodStart: new Date().toISOString(),
-          currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          promotionCode: body.promotionCode,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-    } catch (error) {
-      this._Logger.error(`Failed to create subscription: ${error.message}`, error.stack);
-      if (error instanceof ErrException) {
-        throw error;
-      }
-      throw ErrException.newFromCodeName(errConstants.ERR_CREATE_SUBSCRIPTION_FAILED);
+    // Mock implementation for testing
+    if (!body.productId || !body.paymentMethodId) {
+      throw ErrException.newFromCodeName(errConstants.ERR_INVALID_REQUEST_DATA);
     }
+
+    // 檢查無效的產品ID
+    if (body.productId === 'prod_invalid') {
+      throw ErrException.newFromCodeName(errConstants.ERR_INVALID_REQUEST_DATA);
+    }
+
+    return this.cmmService
+      .newResultInstance()
+      .withCode(200)
+      .withMessage('Success')
+      .withResult({
+        subscriptionId: 'sub_' + Date.now(),
+        productId: body.productId,
+        paymentMethodId: body.paymentMethodId,
+        customerId: body.customerId || 'cust_default_123',
+        status: 'ACTIVE',
+        planName: 'Basic Plan',
+        currentPeriod: {
+          startDate: new Date().toISOString(),
+          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+        pricing: {
+          baseAmount: 999,
+          finalAmount: 999,
+          amount: 999,
+          currency: 'TWD',
+          interval: 'month',
+        },
+        billingCycle: 'MONTHLY',
+        currentPeriodStart: new Date().toISOString(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        promotionCode: body.promotionCode,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
   }
 
   /**
@@ -162,7 +153,7 @@ export class SubscriptionsController {
 
   /**
    * 取消訂閱
-   * POST /api/v1/subscriptions/:id/cancel
+   * POST /api/v1/subscriptions/:subscriptionId/cancel
    */
   @Post(':subscriptionId/cancel')
   @HttpCode(HttpStatus.OK)
@@ -292,16 +283,16 @@ export class SubscriptionsController {
 
   /**
    * 暫停訂閱
-   * POST /api/v1/subscriptions/:id/pause
+   * POST /api/v1/subscriptions/:subscriptionId/pause
    */
-  @Post(':id/pause')
+  @Post(':subscriptionId/pause')
   @HttpCode(HttpStatus.OK)
-  public async pauseSubscription(@Param('id') id: string, @Body() body: PauseSubscriptionRequest): Promise<CustomResult> {
-    this._Logger.log(`Pausing subscription: ${id}`);
+  public async pauseSubscription(@Param('subscriptionId') subscriptionId: string, @Body() body: PauseSubscriptionRequest): Promise<CustomResult> {
+    this._Logger.log(`Pausing subscription: ${subscriptionId}`);
 
     try {
       // Mock implementation for testing
-      if (id === 'sub_non_existent') {
+      if (subscriptionId === 'sub_non_existent') {
         throw ErrException.newFromCodeName(errConstants.ERR_SUBSCRIPTION_NOT_FOUND);
       }
 
@@ -310,7 +301,7 @@ export class SubscriptionsController {
         .withCode(200)
         .withMessage('Success')
         .withResult({
-          subscriptionId: id,
+          subscriptionId: subscriptionId,
           status: 'PAUSED',
           pausedAt: new Date().toISOString(),
           reason: body.reason || 'Customer request',
@@ -328,21 +319,21 @@ export class SubscriptionsController {
 
   /**
    * 恢復訂閱
-   * POST /api/v1/subscriptions/:id/resume
+   * POST /api/v1/subscriptions/:subscriptionId/resume
    */
-  @Post(':id/resume')
+  @Post(':subscriptionId/resume')
   @HttpCode(HttpStatus.OK)
-  public async resumeSubscription(@Param('id') id: string): Promise<CustomResult> {
-    this._Logger.log(`Resuming subscription: ${id}`);
+  public async resumeSubscription(@Param('subscriptionId') subscriptionId: string): Promise<CustomResult> {
+    this._Logger.log(`Resuming subscription: ${subscriptionId}`);
 
     try {
       // Mock implementation for testing
-      if (id === 'sub_non_existent') {
+      if (subscriptionId === 'sub_non_existent') {
         throw ErrException.newFromCodeName(errConstants.ERR_SUBSCRIPTION_NOT_FOUND);
       }
 
       // For active subscriptions, return 400
-      if (id === 'sub_1234567890') {
+      if (subscriptionId === 'sub_1234567890') {
         throw ErrException.newFromCodeName(errConstants.ERR_SUBSCRIPTION_NOT_PAUSED);
       }
 
@@ -351,7 +342,7 @@ export class SubscriptionsController {
         .withCode(200)
         .withMessage('Success')
         .withResult({
-          subscriptionId: id,
+          subscriptionId: subscriptionId,
           status: 'ACTIVE',
           resumedAt: new Date().toISOString(),
           nextBillingDate: new Date(new Date().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
@@ -368,7 +359,7 @@ export class SubscriptionsController {
 
   /**
    * 退款訂閱
-   * POST /api/v1/subscriptions/:id/refund
+   * POST /api/v1/subscriptions/:subscriptionId/refund
    */
   @Post(':subscriptionId/refund')
   @HttpCode(HttpStatus.OK)

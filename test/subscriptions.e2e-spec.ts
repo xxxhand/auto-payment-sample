@@ -1,16 +1,21 @@
 import { HttpStatus } from '@nestjs/common';
 import * as superTest from 'supertest';
 import { AppHelper } from './__helpers__/app.helper';
+import { MongoHelper } from './__helpers__/mongo.helper';
 
 describe('SubscriptionsController (e2e)', () => {
   let agent: superTest.SuperAgentTest;
+  const dbHelper = new MongoHelper('SubscriptionsController');
+  const db = dbHelper.mongo;
 
   beforeAll(async () => {
-    agent = await AppHelper.getAgentWithMockers(new Map());
+    agent = await AppHelper.getAgent();
+    await db.tryConnect();
   });
-
   afterAll(async () => {
     await AppHelper.closeAgent();
+    await dbHelper.clear();
+    db.close();
   });
 
   describe('POST /api/v1/subscriptions', () => {

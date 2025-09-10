@@ -3,35 +3,35 @@ import { Test, TestingModule, TestingModuleBuilder } from '@nestjs/testing';
 import { INestApplication, InjectionToken } from '@nestjs/common';
 import { AppModule } from '../../src/app.module';
 import { runInitial } from '../../src/app-components/app.initial';
-import { DEFAULT_MONGO } from '@myapp/common';
+// import { DEFAULT_MONGO } from '@myapp/common';
 
 // Set environment variables at startup
-process.env.NODE_ENV = 'test';
-process.env.DEFAULT_MONGO_URI = 'mongodb://localhost:27017';
-process.env.DEFAULT_MONGO_DB_NAME = 'payment_test';
-process.env.DEFAULT_MONGO_MIN_POOL = '1';
-process.env.DEFAULT_MONGO_MAX_POOL = '5';
-process.env.DEFAULT_MONGO_CONN_TIMEOUT = '5000';
-process.env.API_PREFIX = '/client_service/api';
-process.env.LOG_FILE_PATH = './logs/combined.log';
+// process.env.NODE_ENV = 'test';
+// process.env.DEFAULT_MONGO_URI = 'mongodb://localhost:27017';
+// process.env.DEFAULT_MONGO_DB_NAME = 'payment_test';
+// process.env.DEFAULT_MONGO_MIN_POOL = '1';
+// process.env.DEFAULT_MONGO_MAX_POOL = '5';
+// process.env.DEFAULT_MONGO_CONN_TIMEOUT = '5000';
+// process.env.API_PREFIX = '/client_service/api';
+// process.env.LOG_FILE_PATH = './logs/combined.log';
 
 // 創建一個模擬的MongoDB客戶端
-const mockMongoClient = {
-  dbConn: {
-    collection: jest.fn().mockReturnValue({
-      find: jest.fn().mockReturnValue({
-        toArray: jest.fn().mockResolvedValue([]),
-      }),
-      findOne: jest.fn().mockResolvedValue(null),
-      insertOne: jest.fn().mockResolvedValue({ insertedId: 'mock-id' }),
-      updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
-      deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
-      countDocuments: jest.fn().mockResolvedValue(0),
-    }),
-  },
-  tryConnect: jest.fn().mockResolvedValue(true),
-  close: jest.fn().mockResolvedValue(true),
-};
+// const mockMongoClient = {
+//   dbConn: {
+//     collection: jest.fn().mockReturnValue({
+//       find: jest.fn().mockReturnValue({
+//         toArray: jest.fn().mockResolvedValue([]),
+//       }),
+//       findOne: jest.fn().mockResolvedValue(null),
+//       insertOne: jest.fn().mockResolvedValue({ insertedId: 'mock-id' }),
+//       updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+//       deleteOne: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+//       countDocuments: jest.fn().mockResolvedValue(0),
+//     }),
+//   },
+//   tryConnect: jest.fn().mockResolvedValue(true),
+//   close: jest.fn().mockResolvedValue(true),
+// };
 
 export class AppHelper {
   private static _app?: INestApplication = undefined;
@@ -42,8 +42,8 @@ export class AppHelper {
       const moduleFixture: TestingModule = await Test.createTestingModule({
         imports: [AppModule],
       })
-        .overrideProvider(DEFAULT_MONGO)
-        .useValue(mockMongoClient)
+        // .overrideProvider(DEFAULT_MONGO)
+        // .useValue(mockMongoClient)
         .compile();
 
       this._app = moduleFixture.createNestApplication();
@@ -60,8 +60,8 @@ export class AppHelper {
         imports: [AppModule],
       });
 
-      // 添加MongoDB模擬
-      builder.overrideProvider(DEFAULT_MONGO).useValue(mockMongoClient);
+      // // 添加MongoDB模擬
+      // builder.overrideProvider(DEFAULT_MONGO).useValue(mockMongoClient);
 
       if (mockers.size > 0) {
         mockers.forEach((v, k) => {

@@ -21,12 +21,14 @@ export class AppExceptionFilter implements ExceptionFilter {
       this._Logger.error(logStr);
       this._Logger.error(err.stack);
     } else {
-      err.setMessage(this.cmmService.t(err.getCodeName(), req.get(usedHttpHeaders.ACCEPT_LANG)));
+      const t = this.cmmService.t(err.getCodeName(), req.get(usedHttpHeaders.ACCEPT_LANG));
+      err.setMessage(t);
       err.format();
       this._Logger.warn(logStr);
     }
 
     if (res.headersSent) return;
+
     res.status(err.getStatus()).json(this.cmmService.newResultInstance().withCode(err.getCode()).withMessage(err.getMessage()));
     // Delete uploaded files
     const tasks = [];
