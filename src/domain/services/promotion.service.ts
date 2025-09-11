@@ -130,7 +130,7 @@ export class PromotionService {
       },
       status: 'ACTIVE',
       validFrom: '2024-01-01T00:00:00Z',
-      validUntil: '2024-12-31T23:59:59Z',
+      validUntil: new Date(Date.now() + 60 * 60 * 24 * 10 * 1000).toISOString(), // 10天後過期
       usageLimit: 5000,
       currentUsage: 1456,
       conditions: {
