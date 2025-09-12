@@ -576,4 +576,48 @@ export class DateCalculationService implements IDateCalculationService {
     }
     return new Date(date);
   }
+
+  private calculateMonthlyBilling(
+    startDate: Date,
+    config: IBillingCycleConfig,
+    timezone?: string
+  ): Date {
+    const targetDate = new Date(startDate);
+    
+    // 使用配置中的 dayOfMonth 或預設為開始日期的日
+    const billingDay = config.dayOfMonth || startDate.getDate();
+    
+    // 設定計費日
+    targetDate.setDate(billingDay);
+    
+    // 如果設定的日期小於等於開始日期，則移到下個月
+    if (targetDate <= startDate) {
+      targetDate.setMonth(targetDate.getMonth() + 1);
+      targetDate.setDate(billingDay);
+    }
+    
+    // 處理月底日期問題（如31號在2月不存在）
+    if (targetDate.getDate() !== billingDay) {
+      // 日期被自動調整，設為該月最後一天
+      targetDate.setDate(0);
+    }
+    
+    return this.applyDateAdjustment(targetDate, config.adjustment, timezone);
+  }
+
+  private calculateYearlyBilling(
+    startDate: Date,
+    config: IBillingCycleConfig,
+    timezone?: string
+  ): Date {
+    const targetDate = new Date(startDate);
+    targetDate.setFullYear(targetDate.getFullYear() + config.interval);
+    
+    // 使用配置中的 dayOfMonth 或保持原日期
+    if (config.dayOfMonth) {
+      targetDate.setDate(config.dayOfMonth);
+    }
+    
+    return this.applyDateAdjustment(targetDate, config.adjustment, timezone);
+  }
 }
