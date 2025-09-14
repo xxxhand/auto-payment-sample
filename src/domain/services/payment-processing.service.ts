@@ -4,7 +4,7 @@ import { PaymentService } from './payment.service';
 import { PaymentMethodRepository } from '../../infra/repositories/payment-method.repository';
 import { Money } from '../value-objects/money';
 import { PaymentFailureCategory } from '../enums/codes.const';
-import { PaymentStatus } from '../interfaces/payment/payment-gateway.interface';
+import { mapFailureCategoryFromGateway, isCategoryRetriable } from '../utils/payment-failure.util';
 
 export interface PaymentProcessingResult {
   success: boolean;
@@ -111,8 +111,8 @@ export class PaymentProcessingService {
         // 優先採用 gateway 提供的 errorCode / errorMessage；否則根據 status 推斷
         const errorCode = result.errorCode || this.mapGatewayErrorCode(result.status);
         const errorMessage = result.errorMessage || this.mapGatewayErrorMessage(result.status);
-        const failureCategory = this.determineFailureCategory(result.status, errorCode);
-        const isRetriable = this.isCategoryRetriable(failureCategory);
+        const failureCategory = mapFailureCategoryFromGateway(result.status, errorCode);
+        const isRetriable = isCategoryRetriable(failureCategory);
 
         return {
           success: false,
@@ -199,50 +199,7 @@ export class PaymentProcessingService {
   /**
    * 判斷失敗類別
    */
-  private determineFailureCategory(status: string | PaymentStatus, errorCode?: string): PaymentFailureCategory {
-    const code = (errorCode || '').toUpperCase();
-    const statusStr = typeof status === 'string' ? status.toUpperCase() : String(status).toUpperCase();
-
-    // 依常見代碼優先分類
-    switch (code) {
-      case 'INSUFFICIENT_FUNDS':
-      case 'DAILY_LIMIT_EXCEEDED':
-      case 'TEMPORARILY_UNAVAILABLE':
-        return PaymentFailureCategory.DELAYED_RETRY; // 餘額/限額/暫時不可用 → 延後重試
-      case 'CARD_DECLINED':
-      case 'DO_NOT_HONOR':
-      case 'STOLEN_CARD':
-      case 'LOST_CARD':
-      case 'INVALID_CARD':
-      case 'INVALID_REQUEST':
-      case 'FRAUD_SUSPECTED':
-        return PaymentFailureCategory.NON_RETRIABLE; // 卡片/請求無效/疑似詐欺 → 不可重試
-      case 'GATEWAY_TIMEOUT':
-      case 'NETWORK_ERROR':
-      case 'TIMEOUT':
-      case 'SERVICE_UNAVAILABLE':
-        return PaymentFailureCategory.RETRIABLE; // 網路/閘道問題 → 可立即重試或快速退避
-    }
-
-    // 若無明確錯誤碼，根據狀態推斷
-    switch (statusStr) {
-      case 'FAILED':
-        // 未提供錯誤碼的失敗預設為不可重試
-        return PaymentFailureCategory.NON_RETRIABLE;
-      case 'PROCESSING':
-      case 'PENDING':
-        return PaymentFailureCategory.RETRIABLE;
-      default:
-        return PaymentFailureCategory.NON_RETRIABLE;
-    }
-  }
-
-  /**
-   * 依類別判斷是否可重試
-   */
-  private isCategoryRetriable(category: PaymentFailureCategory): boolean {
-    return category === PaymentFailureCategory.RETRIABLE || category === PaymentFailureCategory.DELAYED_RETRY;
-  }
+  // mapping 與 retriable 判斷改由 util 提供
 
   /**
    * 判斷是否可重試

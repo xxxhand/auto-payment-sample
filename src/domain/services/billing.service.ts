@@ -118,6 +118,25 @@ export class BillingService {
     // 更新訂閱狀態 - 記錄成功計費
     const subscription = await this.subscriptionRepository.findById(payment.subscriptionId);
     if (subscription) {
+      // 首次扣款成功或問題解除時，依狀態機守門條件轉為 ACTIVE
+      if (subscription.status === SubscriptionStatus.PENDING) {
+        subscription.transitionToStatus(SubscriptionStatus.ACTIVE, {
+          reason: 'Initial payment succeeded',
+          metadata: { paymentSuccessful: true },
+        });
+      } else if ([SubscriptionStatus.GRACE_PERIOD, SubscriptionStatus.RETRY, SubscriptionStatus.PAST_DUE].includes(subscription.status)) {
+        subscription.transitionToStatus(SubscriptionStatus.ACTIVE, {
+          reason: 'Payment issue resolved',
+          metadata: { paymentResolved: true },
+        });
+        // 恢復後重置重試狀態
+        subscription.resetRetryState();
+      } else if (subscription.status === SubscriptionStatus.TRIALING) {
+        // 試用期後的首次成功付款也轉為 ACTIVE（此轉換不需 metadata）
+        subscription.transitionToStatus(SubscriptionStatus.ACTIVE, {
+          reason: 'First paid billing after trial',
+        });
+      }
       // 統一由 SubscriptionService 處理成功扣款後的週期推進與日期計算
       await this.subscriptionService.recordSuccessfulBilling(subscription.id);
     }

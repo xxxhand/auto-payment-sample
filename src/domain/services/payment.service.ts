@@ -6,6 +6,7 @@ import { CustomDefinition } from '@xxxhand/app-common';
 import { RetryStrategyEngine } from './rules-engine/retry-strategy.engine';
 import { PaymentProcessingService } from './payment-processing.service';
 import { Money } from '../value-objects/money';
+import { mapFailureCategoryFromMessage, isCategoryRetriable } from '../utils/payment-failure.util';
 
 export interface PaymentAttempt {
   id: string;
@@ -348,7 +349,7 @@ export class PaymentService {
 
         // 依處理結果的類別或訊息進行失敗類別 mapping
         const failureCategory: PaymentFailureCategory =
-          processingResult.failureCategory !== undefined ? processingResult.failureCategory : this.mapFailureCategoryFromMessage(processingResult.errorMessage);
+          processingResult.failureCategory !== undefined ? processingResult.failureCategory : mapFailureCategoryFromMessage(processingResult.errorMessage);
         const decision = await this.retryStrategyEngine.evaluateRetryDecision({
           paymentId,
           subscriptionId,
@@ -361,6 +362,33 @@ export class PaymentService {
           currency,
         });
 
+        // 同步重試決策到 PaymentEntity.retryState 與 failureDetails（便於外部觀察與後續排程）
+        try {
+          const p = await this.paymentRepository.findById(paymentId);
+          if (p) {
+            p.failureDetails = {
+              errorCode: paymentAttempt.errorCode,
+              errorMessage: lastError,
+              category: failureCategory,
+              isRetriable: isCategoryRetriable(failureCategory),
+              failedAt: new Date(),
+            };
+            p.retryState = {
+              attemptNumber: attempts,
+              maxRetries: decision.maxRetries ?? this.maxRetryAttempts,
+              nextRetryAt: decision.nextRetryDate,
+              lastFailureReason: lastError,
+              failureCategory,
+              retryStrategy: String(decision.retryStrategy || 'UNKNOWN'),
+            };
+            await this.paymentRepository.save(p);
+          }
+        } catch (e) {
+          // 若儲存失敗，不阻斷流程；記錄但不拋出
+          // eslint-disable-next-line no-console
+          console.warn('Failed to persist payment retryState after failure:', e);
+        }
+
         if (!decision.shouldRetry) {
           // 不重試：標記 payment 失敗並結束，保存精確失敗類別
           const p = await this.paymentRepository.findById(paymentId);
@@ -370,7 +398,7 @@ export class PaymentService {
                 errorCode: paymentAttempt.errorCode,
                 errorMessage: lastError,
                 category: failureCategory,
-                isRetriable: this.isCategoryRetriable(failureCategory),
+                isRetriable: isCategoryRetriable(failureCategory),
               },
               false,
             );
@@ -396,7 +424,7 @@ export class PaymentService {
                 errorCode: paymentAttempt.errorCode,
                 errorMessage: lastError,
                 category: failureCategory,
-                isRetriable: this.isCategoryRetriable(failureCategory),
+                isRetriable: isCategoryRetriable(failureCategory),
               },
               false,
             );
@@ -429,6 +457,32 @@ export class PaymentService {
           paymentAmount: amount,
           currency,
         });
+
+        // 同步決策至 PaymentEntity.retryState 以供觀察
+        try {
+          const p = await this.paymentRepository.findById(paymentId);
+          if (p) {
+            p.failureDetails = {
+              errorCode: 'PROCESSING_ERROR',
+              errorMessage: errorMessage,
+              category: PaymentFailureCategory.DELAYED_RETRY,
+              isRetriable: true,
+              failedAt: new Date(),
+            };
+            p.retryState = {
+              attemptNumber: attempts,
+              maxRetries: decision.maxRetries ?? this.maxRetryAttempts,
+              nextRetryAt: decision.nextRetryDate,
+              lastFailureReason: errorMessage,
+              failureCategory: PaymentFailureCategory.DELAYED_RETRY,
+              retryStrategy: String(decision.retryStrategy || 'UNKNOWN'),
+            };
+            await this.paymentRepository.save(p);
+          }
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn('Failed to persist payment retryState after catch failure:', e);
+        }
 
         if (!decision.shouldRetry) {
           const p = await this.paymentRepository.findById(paymentId);
@@ -567,22 +621,5 @@ export class PaymentService {
   /**
    * 將模擬器的錯誤訊息映射至失敗類別，與 gateway 行為對齊
    */
-  private mapFailureCategoryFromMessage(msg?: string): PaymentFailureCategory {
-    const m = (msg || '').toLowerCase();
-    if (!m) return PaymentFailureCategory.NON_RETRIABLE;
-
-    if (m.includes('timeout') || m.includes('network')) return PaymentFailureCategory.RETRIABLE;
-    if (m.includes('insufficient funds') || m.includes('balance')) return PaymentFailureCategory.DELAYED_RETRY;
-    if (m.includes('declined') || m.includes('invalid') || m.includes('fraud')) return PaymentFailureCategory.NON_RETRIABLE;
-
-    // 預設保守策略：不可重試
-    return PaymentFailureCategory.NON_RETRIABLE;
-  }
-
-  /**
-   * 依類別判斷是否可重試
-   */
-  private isCategoryRetriable(category: PaymentFailureCategory): boolean {
-    return category === PaymentFailureCategory.RETRIABLE || category === PaymentFailureCategory.DELAYED_RETRY;
-  }
+  // mapping 與 retriable 判斷改由 util 提供
 }

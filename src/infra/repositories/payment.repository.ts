@@ -46,6 +46,28 @@ export class PaymentRepository {
         invoiceNumber: entity.invoiceNumber,
         receiptNumber: entity.receiptNumber,
         metadata: entity.metadata,
+        failureDetails: entity.failureDetails
+          ? {
+              errorCode: entity.failureDetails.errorCode,
+              errorMessage: entity.failureDetails.errorMessage,
+              providerErrorCode: entity.failureDetails.providerErrorCode,
+              providerErrorMessage: entity.failureDetails.providerErrorMessage,
+              category: entity.failureDetails.category as any,
+              isRetriable: entity.failureDetails.isRetriable,
+              failedAt: entity.failureDetails.failedAt,
+              metadata: entity.failureDetails.metadata,
+            }
+          : undefined,
+        retryState: entity.retryState
+          ? {
+              attemptNumber: entity.retryState.attemptNumber,
+              maxRetries: entity.retryState.maxRetries,
+              nextRetryAt: entity.retryState.nextRetryAt,
+              lastFailureReason: entity.retryState.lastFailureReason,
+              failureCategory: entity.retryState.failureCategory as any,
+              retryStrategy: entity.retryState.retryStrategy,
+            }
+          : undefined,
         createdAt: entity.createdAt,
         updatedAt: entity.updatedAt,
       };
@@ -79,6 +101,28 @@ export class PaymentRepository {
           invoiceNumber: entity.invoiceNumber,
           receiptNumber: entity.receiptNumber,
           metadata: entity.metadata,
+          failureDetails: entity.failureDetails
+            ? {
+                errorCode: entity.failureDetails.errorCode,
+                errorMessage: entity.failureDetails.errorMessage,
+                providerErrorCode: entity.failureDetails.providerErrorCode,
+                providerErrorMessage: entity.failureDetails.providerErrorMessage,
+                category: entity.failureDetails.category as any,
+                isRetriable: entity.failureDetails.isRetriable,
+                failedAt: entity.failureDetails.failedAt,
+                metadata: entity.failureDetails.metadata,
+              }
+            : undefined,
+          retryState: entity.retryState
+            ? {
+                attemptNumber: entity.retryState.attemptNumber,
+                maxRetries: entity.retryState.maxRetries,
+                nextRetryAt: entity.retryState.nextRetryAt,
+                lastFailureReason: entity.retryState.lastFailureReason,
+                failureCategory: entity.retryState.failureCategory as any,
+                retryStrategy: entity.retryState.retryStrategy,
+              }
+            : undefined,
           updatedAt: entity.updatedAt,
         },
       };
@@ -289,6 +333,28 @@ export class PaymentRepository {
       invoiceNumber: doc.invoiceNumber,
       receiptNumber: doc.receiptNumber,
       metadata: doc.metadata,
+      failureDetails: doc.failureDetails
+        ? {
+            errorCode: doc.failureDetails.errorCode,
+            errorMessage: doc.failureDetails.errorMessage,
+            providerErrorCode: doc.failureDetails.providerErrorCode,
+            providerErrorMessage: doc.failureDetails.providerErrorMessage,
+            category: doc.failureDetails.category as any,
+            isRetriable: doc.failureDetails.isRetriable,
+            failedAt: doc.failureDetails.failedAt,
+            metadata: doc.failureDetails.metadata,
+          }
+        : undefined,
+      retryState: doc.retryState
+        ? {
+            attemptNumber: doc.retryState.attemptNumber,
+            maxRetries: doc.retryState.maxRetries,
+            nextRetryAt: doc.retryState.nextRetryAt,
+            lastFailureReason: doc.retryState.lastFailureReason,
+            failureCategory: doc.retryState.failureCategory as any,
+            retryStrategy: doc.retryState.retryStrategy,
+          }
+        : undefined,
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     });
