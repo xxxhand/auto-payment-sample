@@ -136,7 +136,7 @@ class MockBillingService {
     };
   }
 
-  async processBillingAttempt(
+  async processSubscriptionBilling(
     subscriptionId: string,
     amount: Money,
   ): Promise<{
@@ -430,7 +430,7 @@ export class ServiceBasedDailyBillingProcessor {
 
       // 3. 使用 BillingService 處理計費嘗試
       console.log('   💼 步驟 3.3: 使用 BillingService 處理計費嘗試');
-      const billingAttempt = await this.billingService.processBillingAttempt(subscription.id!, finalAmount);
+      const billingAttempt = await this.billingService.processSubscriptionBilling(subscription.id!, finalAmount);
 
       if (!billingAttempt.success) {
         console.log(`      ❌ 計費嘗試失敗: ${billingAttempt.errorMessage}`);
