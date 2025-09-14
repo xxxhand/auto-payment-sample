@@ -50,6 +50,8 @@ interface ComplexBillingResult {
   finalAmount?: Money;
   discountApplied?: boolean;
   errorMessage?: string;
+  nextBillingDate?: string;
+  retryInfo?: string;
   processingDetails: {
     paymentResult?: PaymentProcessingResult;
   };
@@ -117,6 +119,14 @@ class ComplexSubscriptionService {
     subscription.startDate = new Date(startDate);
     subscription.status = status;
 
+    // 初始化重試狀態
+    subscription.retryState = {
+      retryCount: 0,
+      maxRetries: 3,
+      gracePeriodExtensions: 0,
+      maxGraceExtensions: 1,
+    };
+
     if (paymentMethodId === null) {
       subscription.paymentMethodId = '';
     }
@@ -153,6 +163,10 @@ class ComplexSubscriptionService {
     return this.subscriptions.filter((sub) => sub.currentPeriod.isExpired(today));
   }
 
+  async getSubscriptionById(subscriptionId: string): Promise<SubscriptionEntity | undefined> {
+    return this.subscriptions.find((s) => s.subscriptionId === subscriptionId);
+  }
+
   /**
    * @method recordSuccessfulBilling
    * @description 記錄成功計費 (對齊 SubscriptionService)
@@ -161,8 +175,14 @@ class ComplexSubscriptionService {
     this.logger.log(`[DB-SIM] 記錄訂閱 ${subscriptionId} 付款成功。`);
     const sub = this.subscriptions.find((s) => s.subscriptionId === subscriptionId);
     if (sub) {
-      // 在真實應用中，這裡會更新計費週期
-      // sub.recordSuccessfulBilling();
+      // 模擬更新計費週期
+      const { startDate, endDate } = sub.billingCycle.calculateBillingPeriod(sub.currentPeriod.endDate);
+      sub.currentPeriod = new BillingPeriod(startDate, endDate);
+      this.logger.log(`[DB-SIM] 訂閱 ${subscriptionId} 的計費週期已更新。下次扣款日期: ${endDate.toISOString().split('T')[0]}`);
+      // 重置重試狀態
+      sub.retryState.retryCount = 0;
+      sub.retryState.nextRetryDate = undefined;
+      sub.status = SubscriptionStatus.ACTIVE;
     }
   }
 
@@ -175,12 +195,17 @@ class ComplexSubscriptionService {
     const sub = this.subscriptions.find((s) => s.subscriptionId === subscriptionId);
     if (!sub) return;
 
-    if (paymentResult.isRetriable) {
-      this.logger.log(`[DB-SIM] 訂閱 ${subscriptionId} 狀態更新為 ${SubscriptionStatus.PAST_DUE}，已排程重試。`);
+    if (paymentResult.isRetriable && sub.retryState.retryCount < sub.retryState.maxRetries) {
       sub.status = SubscriptionStatus.PAST_DUE;
+      sub.retryState.retryCount += 1;
+      const nextRetryDate = new Date();
+      nextRetryDate.setDate(nextRetryDate.getDate() + 3); // 模擬3天後重試
+      sub.retryState.nextRetryDate = nextRetryDate;
+      sub.retryState.lastFailureDate = new Date();
+      this.logger.log(`[DB-SIM] 訂閱 ${subscriptionId} 狀態更新為 ${SubscriptionStatus.PAST_DUE}，第 ${sub.retryState.retryCount} 次重試已排程於 ${nextRetryDate.toISOString().split('T')[0]}。`);
     } else {
-      this.logger.warn(`[DB-SIM] 訂閱 ${subscriptionId} 付款失敗且不可重試。考慮取消訂閱。`);
       sub.status = SubscriptionStatus.CANCELED;
+      this.logger.warn(`[DB-SIM] 訂閱 ${subscriptionId} 付款失敗且不可重試(或已達最大重試次數)。訂閱已取消。`);
     }
   }
 }
@@ -437,7 +462,7 @@ export class ComplexDailyBillingProcessor {
         },
       };
 
-      // 4. 更新訂閱狀態
+      // 4. 更新訂閱狀態並獲取最新資訊
       if (paymentResult.success) {
         this.logger.log(`訂閱 ${subscription.subscriptionId} 付款成功，交易ID: ${paymentResult.transactionId}`);
         await this.subscriptionService.recordSuccessfulBilling(subscription.subscriptionId);
@@ -445,6 +470,18 @@ export class ComplexDailyBillingProcessor {
         this.logger.error(`訂閱 ${subscription.subscriptionId} 付款失敗，原因: ${paymentResult.errorMessage}`);
         await this.subscriptionService.recordFailedBilling(subscription.subscriptionId, paymentResult);
       }
+
+      // 獲取更新後的訂閱狀態以用於報告
+      const updatedSub = await this.subscriptionService.getSubscriptionById(subscription.subscriptionId);
+      if (updatedSub) {
+        if (updatedSub.status === SubscriptionStatus.ACTIVE && result.success) {
+          // 成功付款後狀態應為 ACTIVE
+          result.nextBillingDate = updatedSub.currentPeriod.endDate.toISOString().split('T')[0];
+        } else if (updatedSub.status === SubscriptionStatus.PAST_DUE && updatedSub.retryState.nextRetryDate) {
+          result.retryInfo = `第 ${updatedSub.retryState.retryCount} 次，下次 ${updatedSub.retryState.nextRetryDate.toISOString().split('T')[0]}`;
+        }
+      }
+
       this.results.push(result);
     }
     this.logger.log('每日帳單處理完畢。');
@@ -463,6 +500,8 @@ export class ComplexDailyBillingProcessor {
       原始金額: r.amount?.format() || 'N/A',
       最終金額: r.finalAmount?.format() || 'N/A',
       折扣: r.discountApplied ? '是' : '否',
+      下次扣款日: r.nextBillingDate || '-',
+      重試資訊: r.retryInfo || '-',
       錯誤訊息: r.errorMessage || '-',
     }));
 
