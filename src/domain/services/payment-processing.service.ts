@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { PaymentGatewayManager } from './payment/payment-gateway-manager.service';
 import { PaymentService } from './payment.service';
 import { PaymentMethodRepository } from '../../infra/repositories/payment-method.repository';
 import { Money } from '../value-objects/money';
 import { PaymentFailureCategory } from '../enums/codes.const';
+import { mapFailureCategoryFromGateway, isCategoryRetriable } from '../utils/payment-failure.util';
 
 export interface PaymentProcessingResult {
   success: boolean;
@@ -25,7 +26,7 @@ export class PaymentProcessingService {
 
   constructor(
     private readonly paymentGatewayManager: PaymentGatewayManager,
-    private readonly paymentService: PaymentService,
+    @Inject(forwardRef(() => PaymentService)) private readonly paymentService: PaymentService,
     private readonly paymentMethodRepository: PaymentMethodRepository,
   ) {}
 
@@ -107,12 +108,18 @@ export class PaymentProcessingService {
           processingTime,
         });
 
+        // 優先採用 gateway 提供的 errorCode / errorMessage；否則根據 status 推斷
+        const errorCode = result.errorCode || this.mapGatewayErrorCode(result.status);
+        const errorMessage = result.errorMessage || this.mapGatewayErrorMessage(result.status);
+        const failureCategory = mapFailureCategoryFromGateway(result.status, errorCode);
+        const isRetriable = isCategoryRetriable(failureCategory);
+
         return {
           success: false,
-          errorCode: this.mapGatewayErrorCode(result.status),
-          errorMessage: this.mapGatewayErrorMessage(result.status),
-          failureCategory: this.determineFailureCategory(result.status),
-          isRetriable: this.isRetriableError(result.status),
+          errorCode,
+          errorMessage,
+          failureCategory,
+          isRetriable,
           processingTime,
         };
       }
@@ -192,20 +199,13 @@ export class PaymentProcessingService {
   /**
    * 判斷失敗類別
    */
-  private determineFailureCategory(status: string): PaymentFailureCategory {
-    const retriableStatuses = ['TIMEOUT', 'NETWORK_ERROR', 'TEMPORARY_ERROR'];
-
-    if (retriableStatuses.includes(status)) {
-      return PaymentFailureCategory.RETRIABLE;
-    }
-
-    return PaymentFailureCategory.NON_RETRIABLE;
-  }
+  // mapping 與 retriable 判斷改由 util 提供
 
   /**
    * 判斷是否可重試
    */
   private isRetriableError(status: string): boolean {
+    // 已由 isCategoryRetriable 決定；此函式保留相容性
     const retriableStatuses = ['TIMEOUT', 'NETWORK_ERROR', 'TEMPORARY_ERROR'];
     return retriableStatuses.includes(status);
   }

@@ -71,4 +71,26 @@ export interface IPaymentModel extends IBaseModel {
 
   /** 支付元資料 */
   metadata: Record<string, any>;
+
+  /** 失敗詳情（擴充） */
+  failureDetails?: {
+    errorCode?: string;
+    errorMessage?: string;
+    providerErrorCode?: string;
+    providerErrorMessage?: string;
+    category: number; // PaymentFailureCategory
+    isRetriable: boolean;
+    failedAt: Date;
+    metadata?: Record<string, any>;
+  };
+
+  /** 重試狀態（擴充） */
+  retryState?: {
+    attemptNumber: number;
+    maxRetries: number;
+    nextRetryAt?: Date;
+    lastFailureReason?: string;
+    failureCategory?: number; // PaymentFailureCategory
+    retryStrategy: string;
+  };
 }

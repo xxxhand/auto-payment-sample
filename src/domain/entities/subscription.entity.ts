@@ -651,15 +651,25 @@ export class SubscriptionEntity extends BaseEntity {
   /**
    * 記錄成功計費 (向後兼容方法)
    */
-  public recordSuccessfulBilling(): void {
+  public recordSuccessfulBilling(next?: { periodStart: Date; periodEnd: Date; nextBillingDate?: Date }): void {
     this.retryState.lastSuccessDate = new Date();
     this.retryState.failureCount = 0;
     this.retryState.retryCount = 0;
 
-    // 更新到下一個計費週期
-    const nextStartDate = this.currentPeriod.endDate;
-    const nextPeriod = new BillingPeriod(nextStartDate, this.billingCycle.calculateNextBillingDate(nextStartDate));
-    this.currentPeriod = nextPeriod;
+    if (next && next.periodStart && next.periodEnd) {
+      // 由外部（服務層）計算好的下一期，直接採用
+      this.currentPeriod = new BillingPeriod(next.periodStart, next.periodEnd);
+      if (next.nextBillingDate) {
+        this.metadata.nextBillingDate = next.nextBillingDate.toISOString();
+      }
+    } else {
+      // 向後相容：沿用舊的本地計算方式
+      const nextStartDate = this.currentPeriod.endDate;
+      const nextEndDate = this.billingCycle.calculateNextBillingDate(nextStartDate);
+      this.currentPeriod = new BillingPeriod(nextStartDate, nextEndDate);
+      // 也同步寫入下次扣款日（以便服務層之後接手）
+      this.metadata.nextBillingDate = nextEndDate.toISOString();
+    }
 
     this.touch();
   }

@@ -8,7 +8,7 @@
 
 import 'reflect-metadata';
 import { ProductService, Product } from '../domain/services/product.service';
-import { PromotionService, Promotion } from '../domain/services/promotion.service';
+import { PromotionService } from '../domain/services/promotion.service';
 
 // 設定假資料
 interface NewUserProductResult {

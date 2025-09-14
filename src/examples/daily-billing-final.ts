@@ -146,11 +146,13 @@ export class DomainBasedBillingProcessor {
       if (paymentResult.success) {
         console.log(`      ✅ 支付成功: ${paymentResult.transactionId}`);
 
-        // 4. 記錄成功計費
+        // 4. 記錄成功計費並更新下一期（使用計費週期計算）
         console.log('      📝 記錄成功計費...');
-        subscription.recordSuccessfulBilling();
+        const anchor = subscription.currentPeriod.endDate;
+        const nextBillingDate = subscription.billingCycle.calculateNextBillingDate(anchor);
+        subscription.recordSuccessfulBilling({ periodStart: anchor, periodEnd: nextBillingDate, nextBillingDate });
         console.log(`      ✅ 訂閱狀態已更新`);
-        console.log(`      📅 下次計費日: ${subscription.currentPeriod.endDate.toLocaleDateString()}`);
+        console.log(`      📅 下次計費日: ${nextBillingDate.toLocaleDateString()}`);
 
         // 5. 記錄計費日誌
         this.logBillingTransaction(subscription.id!, finalAmount, 'SUCCESS', paymentResult.transactionId);
@@ -320,7 +322,7 @@ export class DomainBasedBillingProcessor {
 
     // 設定訂閱為 ACTIVE 狀態（透過模擬成功付款）
     console.log(`初始訂閱1狀態: ${subscription1.status}`);
-    subscription1.recordSuccessfulBilling();
+    subscription1.activate();
     console.log(`訂閱1啟用後狀態: ${subscription1.status}`);
 
     // 客戶2的年繳訂閱 - 未到期
@@ -346,7 +348,7 @@ export class DomainBasedBillingProcessor {
 
     // 設定訂閱為 ACTIVE 狀態（透過模擬成功付款）
     console.log(`初始訂閱2狀態: ${subscription2.status}`);
-    subscription2.recordSuccessfulBilling();
+    subscription2.activate();
     console.log(`訂閱2啟用後狀態: ${subscription2.status}`);
 
     return [subscription1, subscription2];

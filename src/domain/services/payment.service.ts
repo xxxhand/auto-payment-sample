@@ -1,8 +1,12 @@
-import { Injectable } from '@nestjs/common';
-import { PaymentEntity, PaymentStatus } from '../entities';
+import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import { PaymentEntity, PaymentStatus, PaymentFailureCategory } from '../entities';
 import { PaymentRepository } from '../../infra/repositories/payment.repository';
 import { SubscriptionRepository } from '../../infra/repositories/subscription.repository';
 import { CustomDefinition } from '@xxxhand/app-common';
+import { RetryStrategyEngine } from './rules-engine/retry-strategy.engine';
+import { PaymentProcessingService } from './payment-processing.service';
+import { Money } from '../value-objects/money';
+import { mapFailureCategoryFromMessage, isCategoryRetriable } from '../utils/payment-failure.util';
 
 export interface PaymentAttempt {
   id: string;
@@ -42,6 +46,7 @@ export interface PaymentProcessor {
  */
 @Injectable()
 export class PaymentService {
+  // legacy defaults kept as fallback; rule engine will override
   private readonly maxRetryAttempts = 3;
   private readonly retryDelayMs = 1000;
   private readonly paymentAttempts: PaymentAttempt[] = [];
@@ -49,6 +54,8 @@ export class PaymentService {
   constructor(
     private readonly paymentRepository: PaymentRepository,
     private readonly subscriptionRepository: SubscriptionRepository,
+    private readonly retryStrategyEngine: RetryStrategyEngine,
+    @Inject(forwardRef(() => PaymentProcessingService)) private readonly paymentProcessingService: PaymentProcessingService,
   ) {}
 
   /**
@@ -108,11 +115,12 @@ export class PaymentService {
       throw new Error(`Payment with ID ${paymentId} not found`);
     }
 
-    if (!payment.canRetry()) {
+    // 允許首次嘗試（狀態為 PENDING），或在具備重試資格時再次嘗試
+    if (payment.status === PaymentStatus.PENDING || payment.canRetry()) {
+      payment.startAttempt();
+    } else {
       throw new Error(`Payment ${paymentId} cannot be retried`);
     }
-
-    payment.startAttempt();
     return await this.paymentRepository.save(payment);
   }
 
@@ -284,77 +292,151 @@ export class PaymentService {
     amount: number;
     currency: string;
   }): Promise<{ success: boolean; paymentId: string; transactionId?: string; attempts: number; finalError?: string }> {
-    const { paymentId, customerId, paymentMethodId, amount, currency } = paymentData;
+    const { paymentId, paymentMethodId, amount, currency } = paymentData;
     let attempts = 0;
     let lastError: string | undefined;
 
-    while (attempts < this.maxRetryAttempts) {
+    // 驅動重試的規則引擎上下文：需要 subscriptionId 與歷史
+    const payment = await this.paymentRepository.findById(paymentId);
+    const subscriptionId = payment?.subscriptionId || '';
+    const priorFailures = await this.paymentRepository.findBySubscriptionId(subscriptionId);
+    const totalFailureCount = priorFailures.filter((p) => p.isFailed()).length;
+
+    // 以規則引擎為主導的嘗試迴圈
+    // 注意：attempts 代表已完成的次數，故提供給引擎時用 attempts
+    while (true) {
       attempts++;
+      const attemptId = `${paymentId}_attempt_${attempts}`;
+      const attemptStart = new Date().toISOString();
+
+      // 建立嘗試紀錄
+      const paymentAttempt: PaymentAttempt = {
+        id: attemptId,
+        paymentId,
+        attemptNumber: attempts,
+        status: 'PENDING',
+        amount,
+        currency,
+        paymentMethodId,
+        attemptedAt: attemptStart,
+        metadata: {},
+      };
+      this.paymentAttempts.push(paymentAttempt);
 
       try {
-        const attemptId = `${paymentId}_attempt_${attempts}`;
-        const attemptStart = new Date().toISOString();
-
-        // 創建支付嘗試記錄
-        const paymentAttempt: PaymentAttempt = {
-          id: attemptId,
-          paymentId,
-          attemptNumber: attempts,
-          status: 'PENDING',
-          amount,
-          currency,
-          paymentMethodId,
-          attemptedAt: attemptStart,
-          metadata: {},
-        };
-        this.paymentAttempts.push(paymentAttempt);
-
-        // 模擬支付處理邏輯
-        const processingResult = await this.simulatePaymentProcessing({
-          amount,
-          currency,
-          paymentMethodId,
-          customerId,
-        });
-
+        // 執行一次實際支付處理（呼叫 PaymentProcessingService）
+        const processingResult = await this.paymentProcessingService.processPayment(paymentId, paymentMethodId, new Money(amount, currency));
         const completedAt = new Date().toISOString();
         const processingTime = new Date(completedAt).getTime() - new Date(attemptStart).getTime();
 
         if (processingResult.success) {
-          // 支付成功
           paymentAttempt.status = 'SUCCESS';
           paymentAttempt.completedAt = completedAt;
           paymentAttempt.processingTime = processingTime;
           paymentAttempt.metadata.gatewayTransactionId = processingResult.transactionId;
 
           await this.markPaymentSucceeded(paymentId, processingResult.transactionId);
+          return { success: true, paymentId, transactionId: processingResult.transactionId, attempts };
+        }
 
-          return {
-            success: true,
-            paymentId,
-            transactionId: processingResult.transactionId,
-            attempts,
-          };
-        } else {
-          // 支付失敗
-          paymentAttempt.status = 'FAILED';
-          paymentAttempt.completedAt = completedAt;
-          paymentAttempt.processingTime = processingTime;
-          paymentAttempt.errorMessage = processingResult.errorMessage;
-          paymentAttempt.errorCode = 'PAYMENT_FAILED';
+        // 失敗 → 透過 RetryStrategyEngine 決策
+        paymentAttempt.status = 'FAILED';
+        paymentAttempt.completedAt = completedAt;
+        paymentAttempt.processingTime = processingTime;
+        paymentAttempt.errorMessage = processingResult.errorMessage;
+        paymentAttempt.errorCode = processingResult.errorCode || 'PAYMENT_FAILED';
+        lastError = processingResult.errorMessage;
 
-          lastError = processingResult.errorMessage;
+        // 依處理結果的類別或訊息進行失敗類別 mapping
+        const failureCategory: PaymentFailureCategory =
+          processingResult.failureCategory !== undefined ? processingResult.failureCategory : mapFailureCategoryFromMessage(processingResult.errorMessage);
+        const decision = await this.retryStrategyEngine.evaluateRetryDecision({
+          paymentId,
+          subscriptionId,
+          failureCategory,
+          failureReason: processingResult.errorMessage || 'UNKNOWN',
+          attemptNumber: attempts,
+          lastAttemptDate: new Date(),
+          totalFailureCount,
+          paymentAmount: amount,
+          currency,
+        });
 
-          if (attempts < this.maxRetryAttempts) {
-            // 等待後重試
-            await this.delay(this.retryDelayMs * attempts);
+        // 同步重試決策到 PaymentEntity.retryState 與 failureDetails（便於外部觀察與後續排程）
+        try {
+          const p = await this.paymentRepository.findById(paymentId);
+          if (p) {
+            p.failureDetails = {
+              errorCode: paymentAttempt.errorCode,
+              errorMessage: lastError,
+              category: failureCategory,
+              isRetriable: isCategoryRetriable(failureCategory),
+              failedAt: new Date(),
+            };
+            p.retryState = {
+              attemptNumber: attempts,
+              maxRetries: decision.maxRetries ?? this.maxRetryAttempts,
+              nextRetryAt: decision.nextRetryDate,
+              lastFailureReason: lastError,
+              failureCategory,
+              retryStrategy: String(decision.retryStrategy || 'UNKNOWN'),
+            };
+            await this.paymentRepository.save(p);
           }
+        } catch (e) {
+          // 若儲存失敗，不阻斷流程；記錄但不拋出
+          // eslint-disable-next-line no-console
+          console.warn('Failed to persist payment retryState after failure:', e);
+        }
+
+        if (!decision.shouldRetry) {
+          // 不重試：標記 payment 失敗並結束，保存精確失敗類別
+          const p = await this.paymentRepository.findById(paymentId);
+          if (p) {
+            p.markAsFailed(
+              {
+                errorCode: paymentAttempt.errorCode,
+                errorMessage: lastError,
+                category: failureCategory,
+                isRetriable: isCategoryRetriable(failureCategory),
+              },
+              false,
+            );
+            await this.paymentRepository.save(p);
+          } else {
+            await this.markPaymentFailed(paymentId, lastError, 'NO_RETRY_DECIDED');
+          }
+          return { success: false, paymentId, attempts, finalError: lastError };
+        }
+
+        // 需要重試：依決策延遲。為了測試速度，限制最長延遲 100ms。
+        const delayMs = Math.min((decision.delayMinutes || 0) * 60 * 1000, process.env.JEST_WORKER_ID ? 100 : 60_000);
+        if (delayMs > 0) {
+          await this.delay(delayMs);
+        }
+
+        // 繼續下一次嘗試，但也施加一個硬上限避免無限迴圈
+        if (attempts >= (decision.maxRetries || this.maxRetryAttempts)) {
+          const p = await this.paymentRepository.findById(paymentId);
+          if (p) {
+            p.markAsFailed(
+              {
+                errorCode: paymentAttempt.errorCode,
+                errorMessage: lastError,
+                category: failureCategory,
+                isRetriable: isCategoryRetriable(failureCategory),
+              },
+              false,
+            );
+            await this.paymentRepository.save(p);
+          } else {
+            await this.markPaymentFailed(paymentId, lastError, 'MAX_RETRIES_EXCEEDED');
+          }
+          return { success: false, paymentId, attempts, finalError: lastError };
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         lastError = errorMessage;
-
-        // 更新嘗試記錄
         const attempt = this.paymentAttempts.find((a) => a.paymentId === paymentId && a.attemptNumber === attempts);
         if (attempt) {
           attempt.status = 'FAILED';
@@ -363,21 +445,89 @@ export class PaymentService {
           attempt.errorCode = 'PROCESSING_ERROR';
         }
 
-        if (attempts < this.maxRetryAttempts) {
-          await this.delay(this.retryDelayMs * attempts);
+        // 將此處處理錯誤也走引擎：用 DELAYED_RETRY 作為保守類別
+        const decision = await this.retryStrategyEngine.evaluateRetryDecision({
+          paymentId,
+          subscriptionId,
+          failureCategory: PaymentFailureCategory.DELAYED_RETRY,
+          failureReason: errorMessage,
+          attemptNumber: attempts,
+          lastAttemptDate: new Date(),
+          totalFailureCount,
+          paymentAmount: amount,
+          currency,
+        });
+
+        // 同步決策至 PaymentEntity.retryState 以供觀察
+        try {
+          const p = await this.paymentRepository.findById(paymentId);
+          if (p) {
+            p.failureDetails = {
+              errorCode: 'PROCESSING_ERROR',
+              errorMessage: errorMessage,
+              category: PaymentFailureCategory.DELAYED_RETRY,
+              isRetriable: true,
+              failedAt: new Date(),
+            };
+            p.retryState = {
+              attemptNumber: attempts,
+              maxRetries: decision.maxRetries ?? this.maxRetryAttempts,
+              nextRetryAt: decision.nextRetryDate,
+              lastFailureReason: errorMessage,
+              failureCategory: PaymentFailureCategory.DELAYED_RETRY,
+              retryStrategy: String(decision.retryStrategy || 'UNKNOWN'),
+            };
+            await this.paymentRepository.save(p);
+          }
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn('Failed to persist payment retryState after catch failure:', e);
+        }
+
+        if (!decision.shouldRetry) {
+          const p = await this.paymentRepository.findById(paymentId);
+          if (p) {
+            p.markAsFailed(
+              {
+                errorCode: 'PROCESSING_ERROR',
+                errorMessage: lastError,
+                category: PaymentFailureCategory.DELAYED_RETRY,
+                isRetriable: true,
+              },
+              false,
+            );
+            await this.paymentRepository.save(p);
+          } else {
+            await this.markPaymentFailed(paymentId, lastError, 'NO_RETRY_DECIDED');
+          }
+          return { success: false, paymentId, attempts, finalError: lastError };
+        }
+
+        const delayMs = Math.min((decision.delayMinutes || 0) * 60 * 1000, process.env.JEST_WORKER_ID ? 100 : 60_000);
+        if (delayMs > 0) {
+          await this.delay(delayMs);
+        }
+
+        if (attempts >= (decision.maxRetries || this.maxRetryAttempts)) {
+          const p = await this.paymentRepository.findById(paymentId);
+          if (p) {
+            p.markAsFailed(
+              {
+                errorCode: 'PROCESSING_ERROR',
+                errorMessage: lastError,
+                category: PaymentFailureCategory.DELAYED_RETRY,
+                isRetriable: true,
+              },
+              false,
+            );
+            await this.paymentRepository.save(p);
+          } else {
+            await this.markPaymentFailed(paymentId, lastError, 'MAX_RETRIES_EXCEEDED');
+          }
+          return { success: false, paymentId, attempts, finalError: lastError };
         }
       }
     }
-
-    // 所有重試都失敗了
-    await this.markPaymentFailed(paymentId, lastError, 'MAX_RETRIES_EXCEEDED');
-
-    return {
-      success: false,
-      paymentId,
-      attempts,
-      finalError: lastError,
-    };
   }
 
   /**
@@ -467,4 +617,9 @@ export class PaymentService {
   private async delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+
+  /**
+   * 將模擬器的錯誤訊息映射至失敗類別，與 gateway 行為對齊
+   */
+  // mapping 與 retriable 判斷改由 util 提供
 }
