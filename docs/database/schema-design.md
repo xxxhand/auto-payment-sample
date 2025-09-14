@@ -176,7 +176,7 @@ interface SubscriptionDocument {
     appliedAt: Date;                // 套用時間
     cycleNumber: number;            // 套用週期
     discountAmount: number;         // 折扣金額
-    status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+  status: 'ACTIVE' | 'EXPIRED' | 'CANCELED';
   }[];
   
   // 元資料
@@ -186,9 +186,9 @@ interface SubscriptionDocument {
   
   // 取消資訊
   cancellation?: {
-    cancelledAt: Date;              // 取消時間
+    canceledAt: Date;               // 取消時間
     reason: string;                 // 取消原因
-    cancelledBy: ObjectId;          // 取消者
+    canceledBy: ObjectId;           // 取消者
     refundRequested: boolean;       // 是否申請退款
   };
 }

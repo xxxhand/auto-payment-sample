@@ -10,20 +10,22 @@
 
 ```typescript
 enum SubscriptionStatus {
-  // 初始狀態
+  // 初始/試用
   PENDING = 'PENDING',           // 待啟用（首次支付處理中）
-  
+  TRIALING = 'TRIALING',         // 試用期
+
   // 正常狀態
   ACTIVE = 'ACTIVE',             // 活躍中
   PAUSED = 'PAUSED',             // 暫停（用戶主動暫停）
-  
-  // 問題狀態
+
+  // 問題/逾期狀態
   GRACE_PERIOD = 'GRACE_PERIOD', // 寬限期（支付失敗，但仍提供服務）
   RETRY = 'RETRY',               // 重試中（支付失敗，正在重試）
-  
+  PAST_DUE = 'PAST_DUE',         // 逾期（支付失敗後標記逾期）
+
   // 終止狀態
   EXPIRED = 'EXPIRED',           // 已過期（重試失敗，服務終止）
-  CANCELLED = 'CANCELLED',       // 已取消（用戶主動取消）
+  CANCELED = 'CANCELED',         // 已取消（用戶主動取消）
   REFUNDED = 'REFUNDED',         // 已退款
 }
 ```
@@ -32,35 +34,43 @@ enum SubscriptionStatus {
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING : 創建訂閱
-    
-    PENDING --> ACTIVE : 首次支付成功
-    PENDING --> EXPIRED : 首次支付失敗（不可重試）
-    PENDING --> RETRY : 首次支付失敗（可重試）
-    
-    ACTIVE --> PAUSED : 用戶暫停
-    ACTIVE --> GRACE_PERIOD : 定期支付失敗
-    ACTIVE --> CANCELLED : 用戶取消
-    ACTIVE --> REFUNDED : 申請退款
-    
-    PAUSED --> ACTIVE : 用戶恢復
-    PAUSED --> CANCELLED : 用戶取消
-    PAUSED --> EXPIRED : 長期暫停自動過期
-    
-    GRACE_PERIOD --> ACTIVE : 支付成功或手動補款
-    GRACE_PERIOD --> RETRY : 進入重試流程
-    GRACE_PERIOD --> EXPIRED : 寬限期結束
-    GRACE_PERIOD --> CANCELLED : 用戶取消
-    
-    RETRY --> ACTIVE : 重試支付成功
-    RETRY --> GRACE_PERIOD : 重試失敗，延長寬限期
-    RETRY --> EXPIRED : 重試次數耗盡
-    
-    CANCELLED --> REFUNDED : 退款處理
-    
-    EXPIRED --> [*]
-    CANCELLED --> [*]
-    REFUNDED --> [*]
+  [*] --> PENDING : 創建訂閱
+
+  PENDING --> ACTIVE : 首次支付成功
+  PENDING --> RETRY : 首次支付失敗（可重試）
+  PENDING --> EXPIRED : 首次支付失敗（不可重試）
+
+  TRIALING --> ACTIVE : 試用後首次成功付費
+
+  ACTIVE --> PAUSED : 用戶暫停
+  ACTIVE --> GRACE_PERIOD : 定期支付失敗
+  ACTIVE --> CANCELED : 用戶取消
+  ACTIVE --> REFUNDED : 申請退款
+
+  PAUSED --> ACTIVE : 用戶恢復
+  PAUSED --> CANCELED : 用戶取消
+  PAUSED --> EXPIRED : 長期暫停自動過期
+
+  GRACE_PERIOD --> RETRY : 進入重試流程
+  GRACE_PERIOD --> PAST_DUE : 寬限標記為逾期
+  GRACE_PERIOD --> EXPIRED : 寬限期結束
+  GRACE_PERIOD --> CANCELED : 用戶取消
+
+  RETRY --> GRACE_PERIOD : 重試失敗，延長寬限
+  RETRY --> EXPIRED : 重試次數耗盡
+
+  PAST_DUE --> EXPIRED : 長期逾期
+
+  %% 由問題狀態恢復 ACTIVE 需支付已解決的證明
+  GRACE_PERIOD --> ACTIVE : 支付問題解除（需 paymentResolved）
+  RETRY --> ACTIVE : 重試成功（需 paymentResolved）
+  PAST_DUE --> ACTIVE : 補款成功（需 paymentResolved）
+
+  CANCELED --> REFUNDED : 退款處理
+
+  EXPIRED --> [*]
+  CANCELED --> [*]
+  REFUNDED --> [*]
 ```
 
 ### 2.3 狀態轉換規則
@@ -76,26 +86,26 @@ class SubscriptionStateMachine {
     [SubscriptionStatus.ACTIVE, [
       SubscriptionStatus.PAUSED,
       SubscriptionStatus.GRACE_PERIOD,
-      SubscriptionStatus.CANCELLED,
+      SubscriptionStatus.CANCELED,
       SubscriptionStatus.REFUNDED
     ]],
     [SubscriptionStatus.PAUSED, [
       SubscriptionStatus.ACTIVE,
-      SubscriptionStatus.CANCELLED,
+      SubscriptionStatus.CANCELED,
       SubscriptionStatus.EXPIRED
     ]],
     [SubscriptionStatus.GRACE_PERIOD, [
       SubscriptionStatus.ACTIVE,
       SubscriptionStatus.RETRY,
       SubscriptionStatus.EXPIRED,
-      SubscriptionStatus.CANCELLED
+      SubscriptionStatus.CANCELED
     ]],
     [SubscriptionStatus.RETRY, [
       SubscriptionStatus.ACTIVE,
       SubscriptionStatus.GRACE_PERIOD,
       SubscriptionStatus.EXPIRED
     ]],
-    [SubscriptionStatus.CANCELLED, [
+    [SubscriptionStatus.CANCELED, [
       SubscriptionStatus.REFUNDED
     ]],
     // 終止狀態無法轉換
@@ -143,11 +153,12 @@ class SubscriptionStateMachine {
 | 觸發事件 | 原始狀態 | 目標狀態 | 條件檢查 |
 |---------|----------|----------|----------|
 | 首次支付成功 | PENDING | ACTIVE | 支付金額正確 |
+| 試用後首付成功 | TRIALING | ACTIVE | 支付金額正確 |
 | 定期支付失敗 | ACTIVE | GRACE_PERIOD | 失敗原因可重試 |
 | 用戶主動暫停 | ACTIVE | PAUSED | 允許暫停的產品 |
-| 支付重試成功 | RETRY | ACTIVE | 支付確認成功 |
+| 問題解除恢復 | GRACE_PERIOD/RETRY/PAST_DUE | ACTIVE | context.metadata.paymentResolved === true |
 | 重試次數耗盡 | RETRY | EXPIRED | 超過最大重試次數 |
-| 用戶申請退款 | CANCELLED | REFUNDED | 符合退款政策 |
+| 用戶申請退款 | CANCELED | REFUNDED | 符合退款政策 |
 
 ## 3. 支付狀態機 (Payment State Machine)
 
@@ -160,7 +171,7 @@ enum PaymentStatus {
   COMPLETED = 'COMPLETED',       // 支付成功
   FAILED = 'FAILED',             // 支付失敗
   RETRYING = 'RETRYING',         // 重試中
-  CANCELLED = 'CANCELLED',       // 已取消
+  CANCELED = 'CANCELED',         // 已取消（與程式拼字一致）
   REFUNDED = 'REFUNDED',         // 已退款
 }
 ```
@@ -169,25 +180,25 @@ enum PaymentStatus {
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING : 創建支付
-    
-    PENDING --> PROCESSING : 開始支付處理
-    PENDING --> CANCELLED : 取消支付
-    
-    PROCESSING --> COMPLETED : 支付成功
-    PROCESSING --> FAILED : 支付失敗
-    
-    FAILED --> RETRYING : 可重試失敗
-    FAILED --> CANCELLED : 不可重試失敗
-    
-    RETRYING --> PROCESSING : 重試支付
-    RETRYING --> CANCELLED : 重試次數耗盡
-    
-    COMPLETED --> REFUNDED : 處理退款
-    
-    CANCELLED --> [*]
-    COMPLETED --> [*]
-    REFUNDED --> [*]
+  [*] --> PENDING : 創建支付
+
+  PENDING --> PROCESSING : 開始支付處理
+  PENDING --> CANCELED : 取消支付
+
+  PROCESSING --> COMPLETED : 支付成功
+  PROCESSING --> FAILED : 支付失敗
+
+  FAILED --> RETRYING : 可重試失敗
+  FAILED --> CANCELED : 不可重試失敗
+
+  RETRYING --> PROCESSING : 重試支付
+  RETRYING --> CANCELED : 重試次數耗盡
+
+  COMPLETED --> REFUNDED : 處理退款
+
+  CANCELED --> [*]
+  COMPLETED --> [*]
+  REFUNDED --> [*]
 ```
 
 ### 3.3 支付失敗分類狀態機
@@ -285,7 +296,7 @@ enum PlanChangeStatus {
   PROCESSING = 'PROCESSING',     // 處理中
   COMPLETED = 'COMPLETED',       // 已完成
   FAILED = 'FAILED',             // 失敗
-  CANCELLED = 'CANCELLED',       // 已取消
+  CANCELED = 'CANCELED',       // 已取消
 }
 ```
 
@@ -302,13 +313,13 @@ stateDiagram-v2
     APPROVED --> SCHEDULED : 下期生效
     
     SCHEDULED --> PROCESSING : 到期執行
-    SCHEDULED --> CANCELLED : 用戶取消
+  SCHEDULED --> CANCELED : 用戶取消
     
     PROCESSING --> COMPLETED : 變更成功
     PROCESSING --> FAILED : 變更失敗（如補款失敗）
     
     FAILED --> [*]
-    CANCELLED --> [*]
+  CANCELED --> [*]
     COMPLETED --> [*]
 ```
 

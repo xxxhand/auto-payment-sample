@@ -126,16 +126,26 @@ export class PaymentProcessingService {
     } catch (error) {
       const processingTime = Date.now() - startTime;
 
-      this.logger.error(`Payment processing error`, {
-        paymentId,
-        error: error.message,
-        processingTime,
-      });
+      const errMsg = (error as any)?.message ?? String(error);
+      // 在測試環境降低為 debug 以避免噪音，其他環境則保留 error 級別
+      if (process.env.NODE_ENV === 'test') {
+        this.logger.debug(`Payment processing error`, {
+          paymentId,
+          error: errMsg,
+          processingTime,
+        });
+      } else {
+        this.logger.error(`Payment processing error`, {
+          paymentId,
+          error: errMsg,
+          processingTime,
+        });
+      }
 
       return {
         success: false,
         errorCode: 'PROCESSING_ERROR',
-        errorMessage: error.message,
+        errorMessage: errMsg,
         failureCategory: PaymentFailureCategory.RETRIABLE,
         isRetriable: true,
         processingTime,
@@ -252,15 +262,23 @@ export class PaymentProcessingService {
         transactionId: `refund_${Date.now()}`,
       };
     } catch (error) {
-      this.logger.error(`Refund processing error`, {
-        paymentId,
-        error: error.message,
-      });
+      const errMsg = (error as any)?.message ?? String(error);
+      if (process.env.NODE_ENV === 'test') {
+        this.logger.debug(`Refund processing error`, {
+          paymentId,
+          error: errMsg,
+        });
+      } else {
+        this.logger.error(`Refund processing error`, {
+          paymentId,
+          error: errMsg,
+        });
+      }
 
       return {
         success: false,
         errorCode: 'REFUND_ERROR',
-        errorMessage: error.message,
+        errorMessage: errMsg,
         failureCategory: PaymentFailureCategory.RETRIABLE,
         isRetriable: true,
       };

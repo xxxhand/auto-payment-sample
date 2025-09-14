@@ -325,7 +325,7 @@ graph TD
 ### 7.1 後端技術
 - **框架**：NestJS (TypeScript)
 - **運行時**：Node.js 18+
-- **包管理**：pnpm
+- **包管理**：yarn
 
 ### 7.2 資料存儲
 - **主資料庫**：MongoDB 6.0+

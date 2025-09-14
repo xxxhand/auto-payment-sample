@@ -17,7 +17,7 @@ flowchart TD
     E -->|有效/無優惠碼| F[計算訂閱費用]
     F --> G[建立訂閱記錄]
     G --> H[執行首次扣款]
-    H -->|失敗| I[標記訂閱為FAILED]
+    H -->|失敗| I[支付失敗 → 進入重試/寬限流程 (RETRY/GRACE/PAST_DUE)]
     H -->|成功| J[啟用訂閱服務]
     J --> K[建立下次扣款排程]
     K --> L[發送確認通知]
@@ -42,7 +42,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     A[排程觸發扣款] --> B{檢查訂閱狀態}
-    B -->|CANCELLED/EXPIRED| C[跳過扣款]
+    B -->|CANCELED/EXPIRED| C[跳過扣款]
     B -->|PAUSED| D[延後扣款日期]
     B -->|ACTIVE| E{檢查是否有待處理方案變更}
     E -->|有| F[套用新方案]
@@ -184,32 +184,34 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> PENDING: 建立訂閱
+    TRIALING --> ACTIVE: 試用後首次成功付費
     PENDING --> ACTIVE: 首次扣款成功
-    PENDING --> FAILED: 首次扣款失敗
-    FAILED --> [*]: 取消訂閱
-    
+    PENDING --> RETRY: 首次扣款失敗（可重試）
+    PENDING --> EXPIRED: 首次扣款失敗（不可重試）
+
     ACTIVE --> PAUSED: 用戶暫停
+    ACTIVE --> GRACE_PERIOD: 定期扣款失敗
+    ACTIVE --> CANCELED: 用戶取消
+
     PAUSED --> ACTIVE: 用戶恢復
-    PAUSED --> CANCELLED: 用戶取消
-    
-    ACTIVE --> CANCELLED: 用戶取消
-    ACTIVE --> EXPIRED: 扣款失敗超限
-    
-    CANCELLED --> [*]: 結束
-    EXPIRED --> [*]: 結束
-    
-    note right of ACTIVE
-        正常扣款循環
-        - 定期扣款
-        - 方案變更
-        - 優惠套用
-    end note
-    
-    note right of EXPIRED
-        自動失效條件
-        - 重試次數耗盡
-        - 寬限期結束
-    end note
+    PAUSED --> CANCELED: 用戶取消
+
+    GRACE_PERIOD --> RETRY: 進入重試流程
+    GRACE_PERIOD --> PAST_DUE: 標記逾期
+    GRACE_PERIOD --> EXPIRED: 寬限期結束
+
+    RETRY --> GRACE_PERIOD: 重試失敗，延長寬限
+    RETRY --> EXPIRED: 重試次數耗盡
+
+    PAST_DUE --> EXPIRED: 長期逾期
+
+    %% 從問題狀態恢復 ACTIVE 需 paymentResolved（由服務層帶入）
+    GRACE_PERIOD --> ACTIVE: 支付問題解除（需 paymentResolved）
+    RETRY --> ACTIVE: 重試成功（需 paymentResolved）
+    PAST_DUE --> ACTIVE: 補款成功（需 paymentResolved）
+
+    CANCELED --> [*]
+    EXPIRED --> [*]
 ```
 
 ### 5.2 生命週期事件觸發
@@ -217,9 +219,11 @@ stateDiagram-v2
 | 狀態 | 觸發事件 | 系統動作 | 通知類型 |
 |------|----------|----------|----------|
 | PENDING → ACTIVE | 首次扣款成功 | 啟用服務、設定下次扣款 | 歡迎信件 |
+| TRIALING → ACTIVE | 試用後首付成功 | 啟用服務、設定下次扣款 | 歡迎信件 |
 | ACTIVE → PAUSED | 用戶暫停 | 暫停扣款排程 | 暫停確認 |
-| ACTIVE → EXPIRED | 扣款失敗超限 | 停用服務、清理排程 | 服務終止通知 |
-| PAUSED → ACTIVE | 用戶恢復 | 恢復扣款排程 | 服務恢復通知 |
+| ACTIVE → GRACE_PERIOD | 定期扣款失敗 | 進入寬限與重試流程 | 付款失敗通知 |
+| GRACE/RETRY/PAST_DUE → ACTIVE | 支付問題解除 | 服務恢復、重置重試狀態 | 服務恢復通知 |
+| RETRY → EXPIRED | 重試次數耗盡 | 停用服務、清理排程 | 服務終止通知 |
 
 ## 6. 排程作業流程 (Scheduled Jobs Flow)
 

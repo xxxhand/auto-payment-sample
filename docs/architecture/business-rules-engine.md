@@ -177,6 +177,13 @@ export class RetryStrategyEngine {
 - 固定間隔 (FIXED_INTERVAL)
 - 無重試 (NONE)
 
+RetryDecisionResult 主要欄位（與程式一致）：
+- shouldRetry: boolean
+- nextRetryDate?: Date
+- delayMinutes?: number
+- maxRetries?: number
+- retryStrategy?: 'LINEAR' | 'EXPONENTIAL_BACKOFF' | 'FIXED_INTERVAL' | 'NONE'
+
 **智能規則**：
 - Premium客戶延長重試限制（5次→7次）
 - 高額支付立即升級（>10,000元）
@@ -324,42 +331,14 @@ export class RuleEvaluatorService implements IRuleEvaluator {
 - **規則應用**: 計費規則、重試規則、促銷規則
 
 ```typescript
-// 在排程作業中使用規則引擎
+// 在排程作業中整合計費（以 BillingService 為單一入口）
 @Injectable()
 export class DailyBillingService {
-  constructor(
-    private readonly billingRulesEngine: BillingRulesEngine,
-    private readonly retryStrategyEngine: RetryStrategyEngine,
-  ) {}
+  constructor(private readonly billingService: BillingService) {}
 
-  async processBillingBatch(subscriptions: Subscription[]): Promise<void> {
-    for (const subscription of subscriptions) {
-      // 應用計費規則
-      const billingResult = await this.billingRulesEngine.evaluateBillingDecision({
-        subscription,
-        billingDate: new Date(),
-        // ...其他上下文
-      });
-      
-      if (billingResult.shouldCharge) {
-        // 執行扣款邏輯
-        const paymentResult = await this.executePayment(subscription, billingResult.finalAmount);
-        
-        if (!paymentResult.success) {
-          // 應用重試策略
-          const retryDecision = await this.retryStrategyEngine.evaluateRetryDecision({
-            paymentId: paymentResult.paymentId,
-            failureCategory: paymentResult.failureCategory,
-            attemptNumber: paymentResult.attemptNumber,
-            // ...其他上下文
-          });
-          
-          if (retryDecision.shouldRetry) {
-            // 排程下次重試
-            await this.scheduleRetry(subscription, retryDecision);
-          }
-        }
-      }
+  async processBillingBatch(subscriptions: SubscriptionEntity[]): Promise<void> {
+    for (const sub of subscriptions) {
+      await this.billingService.processSubscriptionBilling(sub.id);
     }
   }
 }
@@ -400,21 +379,37 @@ interface RuleExecutionMetadata {
 ```typescript
 @Injectable()
 export class BillingService {
-  async processBilling(subscription: Subscription): Promise<BillingResult> {
-    const context: BillingDecisionContext = {
-      subscription,
-      billingDate: new Date(),
-      paymentHistory: await this.getPaymentHistory(subscription.id),
-      customerTier: await this.getCustomerTier(subscription.userId),
-    };
+  constructor(
+    private readonly billingRulesEngine: BillingRulesEngine,
+    private readonly subscriptionService: SubscriptionService,
+    private readonly paymentService: PaymentService,
+  ) {}
 
-    const decision = await this.billingRulesEngine.evaluateBillingDecision(context);
-    
-    if (decision.shouldCharge) {
-      return await this.executePayment(subscription, decision.finalAmount);
-    } else {
-      return { success: false, reason: decision.reason };
-    }
+  async processSubscriptionBilling(subscriptionId: string) {
+    // 以規則決策 shouldAttemptBilling / recommendedAmount
+    const subscription = await this.subscriptionRepository.findById(subscriptionId);
+    const decision = await this.billingRulesEngine.evaluateBillingDecision({
+      subscriptionId: subscription.id,
+      subscriptionStatus: subscription.status,
+      currentAmount: subscription.pricing.baseAmount,
+      billingCycle: subscription.billingCycle,
+      lastPaymentDate: subscription.lastSuccessfulBillingDate || undefined,
+      failureCount: subscription.consecutiveFailures,
+      gracePeriodEndDate: subscription.gracePeriodEndDate || undefined,
+      paymentMethodValid: true,
+    });
+    if (!decision.shouldAttemptBilling) return { success: false };
+
+    const amount = (decision.recommendedAmount || subscription.pricing.baseAmount).amount;
+    const payment = await this.paymentService.createPayment(
+      subscription.id,
+      subscription.customerId,
+      subscription.paymentMethodId,
+      amount,
+      subscription.pricing.currency,
+    );
+    await this.paymentService.startPaymentAttempt(payment.id);
+    return { success: true, payment };
   }
 }
 ```
@@ -422,29 +417,17 @@ export class BillingService {
 ### 9.2 重試策略範例
 
 ```typescript
-@Injectable() 
-export class PaymentRetryService {
-  async handlePaymentFailure(paymentId: string, failureInfo: PaymentFailure): Promise<void> {
-    const context: RetryDecisionContext = {
-      paymentId,
-      subscriptionId: failureInfo.subscriptionId,
-      failureCategory: failureInfo.category,
-      failureReason: failureInfo.reason,
-      attemptNumber: failureInfo.attemptNumber,
-      lastAttemptDate: new Date(),
-      totalFailureCount: failureInfo.totalFailures,
-      customerTier: await this.getCustomerTier(failureInfo.userId),
-      paymentAmount: failureInfo.amount,
-      currency: failureInfo.currency,
-    };
+@Injectable()
+export class PaymentService {
+  constructor(
+    private readonly retryStrategyEngine: RetryStrategyEngine,
+    private readonly paymentProcessingService: PaymentProcessingService,
+    private readonly paymentRepository: PaymentRepository,
+  ) {}
 
-    const decision = await this.retryStrategyEngine.evaluateRetryDecision(context);
-    
-    if (decision.shouldRetry) {
-      await this.scheduleRetry(paymentId, decision.nextRetryDate);
-    } else if (decision.escalateToManual) {
-      await this.escalateToManualReview(paymentId, decision.reason);
-    }
+  async processPaymentWithRetry({ paymentId, paymentMethodId, amount, currency }) {
+    // 呼叫 gateway manager 並以規則引擎決策是否重試
+    // 失敗後會將 decision 寫回 PaymentEntity.retryState 與 failureDetails
   }
 }
 ```

@@ -598,7 +598,7 @@ Authorization: Bearer <token>
 | 401 Unauthorized | 4100-4199 | 身份驗證失敗 | 4101: AUTHENTICATION_FAILED |
 | 403 Forbidden | 4200-4299 | 權限不足 | 4201: ACCESS_DENIED |
 | 404 Not Found | 4300-4399 | 資源不存在 | 4301: SUBSCRIPTION_NOT_FOUND |
-| 409 Conflict | 4400-4499 | 資源狀態衝突 | 4401: SUBSCRIPTION_ALREADY_CANCELLED |
+| 409 Conflict | 4400-4499 | 資源狀態衝突 | 4401: SUBSCRIPTION_ALREADY_CANCELED |
 | 422 Unprocessable Entity | 4500-4599 | 業務邏輯錯誤 | 4501: PLAN_CHANGE_NOT_ALLOWED |
 | 429 Too Many Requests | 4600-4699 | 速率限制 | 4601: RATE_LIMIT_EXCEEDED |
 | 500 Internal Server Error | 5000-5999 | 系統錯誤 | 5001: INTERNAL_ERROR |
@@ -620,9 +620,9 @@ export const ERROR_CODES = {
     message: 'Subscription not found',
     httpStatus: 404
   },
-  SUBSCRIPTION_ALREADY_CANCELLED: {
+  SUBSCRIPTION_ALREADY_CANCELED: {
     code: 4401,
-    message: 'Subscription is already cancelled',
+    message: 'Subscription is already canceled',
     httpStatus: 409
   },
   INVALID_SUBSCRIPTION_STATUS: {

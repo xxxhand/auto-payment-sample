@@ -175,9 +175,22 @@ export class BillingService {
         currency: payment.currency || 'TWD',
       });
 
-      if (retryDecision.shouldRetry && retryDecision.nextRetryDate) {
-        // 進入重試狀態並設定下次重試日
-        subscription.enterRetryState(retryDecision.nextRetryDate);
+      // 若規則引擎允許重試但未提供日期，使用 delayMinutes 或安全預設（10 分鐘）計算
+      let nextRetryDate = retryDecision.nextRetryDate;
+      if (retryDecision.shouldRetry && !nextRetryDate) {
+        const delayMinutes = retryDecision.delayMinutes ?? 10;
+        nextRetryDate = new Date(Date.now() + delayMinutes * 60 * 1000);
+      }
+
+      // 保底：若失敗類別為可重試/延後重試，且決策意外為 false，也應進入 RETRY
+      const isCategoryRetriable = [PaymentFailureCategory.RETRIABLE, PaymentFailureCategory.DELAYED_RETRY].includes(failureCategory);
+      if (retryDecision.shouldRetry || isCategoryRetriable) {
+        // 進入重試狀態並設定下次重試日（若仍無日期，依類別給定保底值）
+        if (!nextRetryDate) {
+          const defaultMinutes = failureCategory === PaymentFailureCategory.DELAYED_RETRY ? 60 : 5;
+          nextRetryDate = new Date(Date.now() + defaultMinutes * 60 * 1000);
+        }
+        subscription.enterRetryState(nextRetryDate);
       } else {
         // 不重試：先進入寬限期，再轉為 PAST_DUE 以符合狀態機轉換規則
         const graceEnd = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
