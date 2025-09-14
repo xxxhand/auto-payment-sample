@@ -30,6 +30,13 @@ export class BillingCycleVO {
   }
 
   /**
+   * 取得顯示名稱（向後兼容）
+   */
+  get displayName(): string {
+    return this.getDescription();
+  }
+
+  /**
    * 計算下一個計費日期
    */
   calculateNextBillingDate(fromDate: Date = new Date()): Date {
