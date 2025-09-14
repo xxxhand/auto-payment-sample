@@ -32,13 +32,9 @@ export class PaymentProcessingService {
   /**
    * 處理支付
    */
-  async processPayment(
-    paymentId: string,
-    paymentMethodId: string,
-    amount: Money,
-  ): Promise<PaymentProcessingResult> {
+  async processPayment(paymentId: string, paymentMethodId: string, amount: Money): Promise<PaymentProcessingResult> {
     const startTime = Date.now();
-    
+
     this.logger.log(`Processing payment`, {
       paymentId,
       paymentMethodId,
@@ -71,7 +67,7 @@ export class PaymentProcessingService {
 
       // 2. 選擇支付閘道
       const gatewayName = this.selectPaymentGateway(paymentMethod.type, amount);
-      
+
       // 3. 準備支付選項
       const paymentOptions = {
         paymentId,
@@ -89,7 +85,7 @@ export class PaymentProcessingService {
 
       // 4. 執行支付
       const result = await this.paymentGatewayManager.processPayment(gatewayName, paymentOptions);
-      
+
       const processingTime = Date.now() - startTime;
 
       if (result.success) {
@@ -120,10 +116,9 @@ export class PaymentProcessingService {
           processingTime,
         };
       }
-
     } catch (error) {
       const processingTime = Date.now() - startTime;
-      
+
       this.logger.error(`Payment processing error`, {
         paymentId,
         error: error.message,
@@ -149,7 +144,7 @@ export class PaymentProcessingService {
     if (amount.currency === 'TWD') {
       return 'ecpay'; // 台灣市場使用 ECPay
     }
-    
+
     return 'mock'; // 其他情況使用模擬閘道
   }
 
@@ -158,11 +153,11 @@ export class PaymentProcessingService {
    */
   private mapPaymentMethodType(type: string): string {
     const typeMap: Record<string, string> = {
-      'CREDIT_CARD': 'credit_card',
-      'BANK_ACCOUNT': 'webatm',
-      'DIGITAL_WALLET': 'credit_card',
+      CREDIT_CARD: 'credit_card',
+      BANK_ACCOUNT: 'webatm',
+      DIGITAL_WALLET: 'credit_card',
     };
-    
+
     return typeMap[type] || 'credit_card';
   }
 
@@ -171,12 +166,12 @@ export class PaymentProcessingService {
    */
   private mapGatewayErrorCode(status: string): string {
     const errorMap: Record<string, string> = {
-      'FAILED': 'GATEWAY_FAILED',
-      'DECLINED': 'CARD_DECLINED',
-      'TIMEOUT': 'GATEWAY_TIMEOUT',
-      'INVALID': 'INVALID_REQUEST',
+      FAILED: 'GATEWAY_FAILED',
+      DECLINED: 'CARD_DECLINED',
+      TIMEOUT: 'GATEWAY_TIMEOUT',
+      INVALID: 'INVALID_REQUEST',
     };
-    
+
     return errorMap[status] || 'UNKNOWN_ERROR';
   }
 
@@ -185,12 +180,12 @@ export class PaymentProcessingService {
    */
   private mapGatewayErrorMessage(status: string): string {
     const messageMap: Record<string, string> = {
-      'FAILED': '支付處理失敗',
-      'DECLINED': '信用卡被拒絕',
-      'TIMEOUT': '支付閘道逾時',
-      'INVALID': '無效的支付請求',
+      FAILED: '支付處理失敗',
+      DECLINED: '信用卡被拒絕',
+      TIMEOUT: '支付閘道逾時',
+      INVALID: '無效的支付請求',
     };
-    
+
     return messageMap[status] || '未知錯誤';
   }
 
@@ -199,11 +194,11 @@ export class PaymentProcessingService {
    */
   private determineFailureCategory(status: string): PaymentFailureCategory {
     const retriableStatuses = ['TIMEOUT', 'NETWORK_ERROR', 'TEMPORARY_ERROR'];
-    
+
     if (retriableStatuses.includes(status)) {
       return PaymentFailureCategory.RETRIABLE;
     }
-    
+
     return PaymentFailureCategory.NON_RETRIABLE;
   }
 
@@ -218,11 +213,7 @@ export class PaymentProcessingService {
   /**
    * 退款處理
    */
-  async processRefund(
-    paymentId: string,
-    refundAmount: Money,
-    reason?: string,
-  ): Promise<PaymentProcessingResult> {
+  async processRefund(paymentId: string, refundAmount: Money, reason?: string): Promise<PaymentProcessingResult> {
     this.logger.log(`Processing refund`, {
       paymentId,
       amount: refundAmount.amount,
@@ -260,7 +251,6 @@ export class PaymentProcessingService {
         success: true,
         transactionId: `refund_${Date.now()}`,
       };
-
     } catch (error) {
       this.logger.error(`Refund processing error`, {
         paymentId,

@@ -119,9 +119,9 @@ export class PaymentMethodRepository {
 
     const collection = this.mongoClient.getCollection(modelNames.PAYMENT_METHODS);
     const docs = (await collection
-      .find({ 
+      .find({
         customerId: new ObjectId(customerId),
-        status 
+        status,
       })
       .sort({ createdAt: -1 })
       .toArray()) as IPaymentMethodDocument[];
