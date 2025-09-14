@@ -202,7 +202,9 @@ class ComplexSubscriptionService {
       nextRetryDate.setDate(nextRetryDate.getDate() + 3); // 模擬3天後重試
       sub.retryState.nextRetryDate = nextRetryDate;
       sub.retryState.lastFailureDate = new Date();
-      this.logger.log(`[DB-SIM] 訂閱 ${subscriptionId} 狀態更新為 ${SubscriptionStatus.PAST_DUE}，第 ${sub.retryState.retryCount} 次重試已排程於 ${nextRetryDate.toISOString().split('T')[0]}。`);
+      this.logger.log(
+        `[DB-SIM] 訂閱 ${subscriptionId} 狀態更新為 ${SubscriptionStatus.PAST_DUE}，第 ${sub.retryState.retryCount} 次重試已排程於 ${nextRetryDate.toISOString().split('T')[0]}。`,
+      );
     } else {
       sub.status = SubscriptionStatus.CANCELED;
       this.logger.warn(`[DB-SIM] 訂閱 ${subscriptionId} 付款失敗且不可重試(或已達最大重試次數)。訂閱已取消。`);
