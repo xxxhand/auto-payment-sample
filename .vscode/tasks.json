@@ -1,0 +1,36 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run tests (spec + e2e-lite)",
+			"type": "shell",
+			"command": "yarn",
+			"args": [
+				"jest",
+				"--config",
+				"./package.json",
+				"--runInBand",
+				"--passWithNoTests",
+				"--testPathPattern",
+				"(test/.*\\.e2e-spec\\.ts|src/.*__tests__.*\\.spec\\.ts|test/payment-processing-mapping\\.e2e-spec\\.ts|test/billing-retry-flow\\.e2e-spec\\.ts)"
+			]
+		},
+		{
+			"label": "Run tests (spec + e2e-lite)",
+			"type": "shell",
+			"command": "yarn",
+			"args": [
+				"jest",
+				"--config",
+				"./package.json",
+				"--runInBand",
+				"--passWithNoTests",
+				"--testPathPattern",
+				"'(test/.*\\.e2e-spec\\.ts|src/.*__tests__.*\\.spec\\.ts|test/payment-processing-mapping\\.e2e-spec\\.ts|test/billing-retry-flow\\.e2e-spec\\.ts)'"
+			],
+			"problemMatcher": [
+				"$tsc"
+			]
+		}
+	]
+}

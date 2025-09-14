@@ -5,6 +5,11 @@ import { SubscriptionRepository } from '../../infra/repositories/subscription.re
 import { PaymentService } from './payment.service';
 import { SubscriptionService } from './subscription.service';
 import { CustomDefinition } from '@xxxhand/app-common';
+import { BillingRulesEngine } from './rules-engine/billing-rules.engine';
+import { RetryStrategyEngine } from './rules-engine/retry-strategy.engine';
+import { PaymentMethodRepository } from '../../infra/repositories/payment-method.repository';
+import { Money } from '../value-objects/money';
+import { PaymentFailureCategory, SubscriptionStatus } from '../enums/codes.const';
 
 /**
  * 計費處理服務
@@ -16,6 +21,9 @@ export class BillingService {
     private readonly subscriptionRepository: SubscriptionRepository,
     private readonly paymentService: PaymentService,
     private readonly subscriptionService: SubscriptionService,
+    private readonly billingRulesEngine: BillingRulesEngine,
+    private readonly retryStrategyEngine: RetryStrategyEngine,
+    private readonly paymentMethodRepository: PaymentMethodRepository,
   ) {}
 
   /**
@@ -42,6 +50,29 @@ export class BillingService {
     }
 
     try {
+      // 0. 事前決策：使用 BillingRulesEngine 決定是否進行本次扣款
+      const paymentMethod = subscription.paymentMethodId ? await this.paymentMethodRepository.findById(subscription.paymentMethodId) : undefined;
+
+      const billingDecision = await this.billingRulesEngine.evaluateBillingDecision({
+        subscriptionId: subscription.id,
+        subscriptionStatus: subscription.status,
+        currentAmount: subscription.pricing.baseAmount,
+        billingCycle: subscription.billingCycle,
+        lastPaymentDate: subscription.lastSuccessfulBillingDate || undefined,
+        failureCount: subscription.consecutiveFailures,
+        gracePeriodEndDate: subscription.gracePeriodEndDate || undefined,
+        paymentMethodValid: !!paymentMethod?.isAvailable(),
+      });
+
+      if (!billingDecision.shouldAttemptBilling) {
+        return {
+          success: false,
+          error: `Billing blocked: ${billingDecision.reason}`,
+        };
+      }
+
+      const amountToBill: Money = billingDecision.recommendedAmount || subscription.pricing.baseAmount;
+
       // 檢查是否有有效的支付方式
       if (!subscription.paymentMethodId) {
         return {
@@ -55,8 +86,8 @@ export class BillingService {
         subscription.id,
         subscription.customerId,
         subscription.paymentMethodId,
-        subscription.amount,
-        subscription.currency,
+        amountToBill.amount,
+        amountToBill.currency,
         `Subscription billing for period ${subscription.currentPeriodStart.toISOString()} to ${subscription.currentPeriodEnd.toISOString()}`,
       );
 
@@ -103,16 +134,40 @@ export class BillingService {
 
     const subscription = await this.subscriptionRepository.findById(payment.subscriptionId);
     if (subscription) {
+      // 1) 訂閱失敗記錄（先維持原有記數）
       subscription.recordFailedBilling();
 
-      // 根據失敗次數決定處理方式
+      // 2) 查詢此訂閱近期嘗試與失敗類別（暫以 RETRIABLE 類別估置，實務上應由支付流程提供）
       const failedPayments = await this.paymentService.getPaymentsBySubscriptionId(subscription.id);
-      const recentFailures = failedPayments.filter((p) => p.isFailed()).filter((p) => p.createdAt.getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000).length; // 30天內
+      const totalFailures = failedPayments.filter((p) => p.isFailed()).length;
+      const lastAttemptDate = failedPayments.length ? failedPayments[failedPayments.length - 1].updatedAt || new Date() : new Date();
 
-      if (recentFailures >= 3) {
-        // 連續失敗3次，標記為逾期
-        const gracePeriodEnd = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7天寬限期
-        subscription.markPastDue(gracePeriodEnd);
+      // 3) 透過 RetryStrategyEngine 取得重試決策
+      const failureCategory = payment.failureDetails?.category ?? PaymentFailureCategory.RETRIABLE;
+      const retryDecision = await this.retryStrategyEngine.evaluateRetryDecision({
+        paymentId: payment.id,
+        subscriptionId: subscription.id,
+        failureCategory,
+        failureReason: payment.failureReason || 'UNKNOWN',
+        attemptNumber: payment.retryState?.attemptNumber || 1,
+        lastAttemptDate,
+        totalFailureCount: totalFailures,
+        paymentAmount: payment.amount,
+        currency: payment.currency || 'TWD',
+      });
+
+      if (retryDecision.shouldRetry && retryDecision.nextRetryDate) {
+        // 進入重試狀態並設定下次重試日
+        subscription.enterRetryState(retryDecision.nextRetryDate);
+      } else {
+        // 不重試：先進入寬限期，再轉為 PAST_DUE 以符合狀態機轉換規則
+        const graceEnd = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+        subscription.enterGracePeriod(graceEnd);
+        // 立即標記為逾期
+        subscription.transitionToStatus(SubscriptionStatus.PAST_DUE, {
+          reason: 'Payment failed, marked past due',
+          metadata: { paymentFailed: true },
+        });
       }
 
       await this.subscriptionRepository.save(subscription);

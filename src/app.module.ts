@@ -23,6 +23,7 @@ import { BillingPlanRepository } from './infra/repositories/billing-plan.reposit
 import { CustomerService } from './domain/services/customer.service';
 import { SubscriptionService } from './domain/services/subscription.service';
 import { PaymentService } from './domain/services/payment.service';
+import { PaymentProcessingService } from './domain/services/payment-processing.service';
 import { ProductService } from './domain/services/product.service';
 import { PromotionService } from './domain/services/promotion.service';
 import { RefundService } from './domain/services/refund.service';
@@ -33,10 +34,12 @@ import { SubscriptionApplicationService } from './application/subscription.appli
 // Payment Module
 import { PaymentModule } from './domain/services/payment/payment.module';
 import { DateCalculationModule } from './domain/services/date-calculation/date-calculation.module';
+import { BusinessRulesEngineModule } from './domain/services/rules-engine/business-rules-engine.module';
+import { PaymentMethodRepository } from './infra/repositories/payment-method.repository';
 import { AppExceptionFilter } from './app-components/app-exception.filter';
 import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
 @Module({
-  imports: [CommonModule, PaymentModule, DateCalculationModule],
+  imports: [CommonModule, PaymentModule, DateCalculationModule, BusinessRulesEngineModule],
   controllers: [
     AppController,
     ExampleController,
@@ -62,11 +65,13 @@ import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
     SubscriptionRepository,
     PaymentRepository,
     ProductRepository,
+    PaymentMethodRepository,
     BillingPlanRepository,
     // Business Services
     CustomerService,
     SubscriptionService,
     PaymentService,
+    PaymentProcessingService,
     ProductService,
     PromotionService,
     RefundService,

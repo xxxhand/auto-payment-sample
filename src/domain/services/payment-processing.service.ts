@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { PaymentGatewayManager } from './payment/payment-gateway-manager.service';
 import { PaymentService } from './payment.service';
 import { PaymentMethodRepository } from '../../infra/repositories/payment-method.repository';
 import { Money } from '../value-objects/money';
 import { PaymentFailureCategory } from '../enums/codes.const';
+import { PaymentStatus } from '../interfaces/payment/payment-gateway.interface';
 
 export interface PaymentProcessingResult {
   success: boolean;
@@ -25,7 +26,7 @@ export class PaymentProcessingService {
 
   constructor(
     private readonly paymentGatewayManager: PaymentGatewayManager,
-    private readonly paymentService: PaymentService,
+    @Inject(forwardRef(() => PaymentService)) private readonly paymentService: PaymentService,
     private readonly paymentMethodRepository: PaymentMethodRepository,
   ) {}
 
@@ -107,12 +108,18 @@ export class PaymentProcessingService {
           processingTime,
         });
 
+        // 優先採用 gateway 提供的 errorCode / errorMessage；否則根據 status 推斷
+        const errorCode = result.errorCode || this.mapGatewayErrorCode(result.status);
+        const errorMessage = result.errorMessage || this.mapGatewayErrorMessage(result.status);
+        const failureCategory = this.determineFailureCategory(result.status, errorCode);
+        const isRetriable = this.isCategoryRetriable(failureCategory);
+
         return {
           success: false,
-          errorCode: this.mapGatewayErrorCode(result.status),
-          errorMessage: this.mapGatewayErrorMessage(result.status),
-          failureCategory: this.determineFailureCategory(result.status),
-          isRetriable: this.isRetriableError(result.status),
+          errorCode,
+          errorMessage,
+          failureCategory,
+          isRetriable,
           processingTime,
         };
       }
@@ -192,20 +199,56 @@ export class PaymentProcessingService {
   /**
    * 判斷失敗類別
    */
-  private determineFailureCategory(status: string): PaymentFailureCategory {
-    const retriableStatuses = ['TIMEOUT', 'NETWORK_ERROR', 'TEMPORARY_ERROR'];
+  private determineFailureCategory(status: string | PaymentStatus, errorCode?: string): PaymentFailureCategory {
+    const code = (errorCode || '').toUpperCase();
+    const statusStr = typeof status === 'string' ? status.toUpperCase() : String(status).toUpperCase();
 
-    if (retriableStatuses.includes(status)) {
-      return PaymentFailureCategory.RETRIABLE;
+    // 依常見代碼優先分類
+    switch (code) {
+      case 'INSUFFICIENT_FUNDS':
+      case 'DAILY_LIMIT_EXCEEDED':
+      case 'TEMPORARILY_UNAVAILABLE':
+        return PaymentFailureCategory.DELAYED_RETRY; // 餘額/限額/暫時不可用 → 延後重試
+      case 'CARD_DECLINED':
+      case 'DO_NOT_HONOR':
+      case 'STOLEN_CARD':
+      case 'LOST_CARD':
+      case 'INVALID_CARD':
+      case 'INVALID_REQUEST':
+      case 'FRAUD_SUSPECTED':
+        return PaymentFailureCategory.NON_RETRIABLE; // 卡片/請求無效/疑似詐欺 → 不可重試
+      case 'GATEWAY_TIMEOUT':
+      case 'NETWORK_ERROR':
+      case 'TIMEOUT':
+      case 'SERVICE_UNAVAILABLE':
+        return PaymentFailureCategory.RETRIABLE; // 網路/閘道問題 → 可立即重試或快速退避
     }
 
-    return PaymentFailureCategory.NON_RETRIABLE;
+    // 若無明確錯誤碼，根據狀態推斷
+    switch (statusStr) {
+      case 'FAILED':
+        // 未提供錯誤碼的失敗預設為不可重試
+        return PaymentFailureCategory.NON_RETRIABLE;
+      case 'PROCESSING':
+      case 'PENDING':
+        return PaymentFailureCategory.RETRIABLE;
+      default:
+        return PaymentFailureCategory.NON_RETRIABLE;
+    }
+  }
+
+  /**
+   * 依類別判斷是否可重試
+   */
+  private isCategoryRetriable(category: PaymentFailureCategory): boolean {
+    return category === PaymentFailureCategory.RETRIABLE || category === PaymentFailureCategory.DELAYED_RETRY;
   }
 
   /**
    * 判斷是否可重試
    */
   private isRetriableError(status: string): boolean {
+    // 已由 isCategoryRetriable 決定；此函式保留相容性
     const retriableStatuses = ['TIMEOUT', 'NETWORK_ERROR', 'TEMPORARY_ERROR'];
     return retriableStatuses.includes(status);
   }
