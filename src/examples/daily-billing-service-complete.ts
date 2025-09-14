@@ -377,7 +377,7 @@ export class ServiceBasedDailyBillingProcessor {
     try {
       // 先確保訂閱是活躍狀態
       if (!subscription.isActive()) {
-        subscription.recordSuccessfulBilling(); // 模擬啟用訂閱
+        subscription.activate(); // 模擬啟用訂閱
       }
 
       // 1. 使用 BillingRulesEngine 評估計費決策
@@ -447,12 +447,22 @@ export class ServiceBasedDailyBillingProcessor {
       if (paymentResult.success) {
         console.log(`      ✅ 支付成功: ${paymentResult.transactionId}`);
 
-        // 5. 使用 SubscriptionService 記錄成功計費
+        // 5. 使用 SubscriptionService 記錄成功計費 + 更新實體下一期
         console.log('   📝 步驟 3.5: 使用 SubscriptionService 記錄成功計費');
         await this.subscriptionService.recordSuccessfulBilling(subscription.id!);
 
-        // 同時更新實體狀態
-        subscription.recordSuccessfulBilling();
+        // 同步更新訂閱狀態為 ACTIVE（範例用 mock 服務）
+        await this.subscriptionService.updateSubscriptionStatus(subscription.id!, 'ACTIVE');
+
+        // 依據範例的 MockDateCalculationService 計算下一期，並更新實體（與正式服務邏輯一致）
+        const anchor = subscription.currentPeriod.endDate;
+        const cfg = {
+          type: subscription.billingCycle.type === BillingCycle.MONTHLY ? 'MONTHLY' : 'ANNUALLY',
+          interval: 1,
+          billingDay: subscription.billingCycle.billingDay || anchor.getDate(),
+        } as const;
+        const { nextBillingDate } = this.dateCalculationService.calculateNextBillingDate(anchor, anchor, cfg);
+        subscription.recordSuccessfulBilling({ periodStart: anchor, periodEnd: nextBillingDate, nextBillingDate });
 
         // 6. 使用 BillingService 檢查更新後的計費狀態
         console.log('   🔍 步驟 3.6: 使用 BillingService 檢查計費狀態');

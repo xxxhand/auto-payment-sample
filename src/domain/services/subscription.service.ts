@@ -3,6 +3,8 @@ import { SubscriptionEntity, SubscriptionStatus, BillingCycle } from '../entitie
 import { CancellationReason } from '../enums/codes.const';
 import { SubscriptionRepository } from '../../infra/repositories/subscription.repository';
 import { CustomDefinition } from '@xxxhand/app-common';
+import { DateCalculationService } from './date-calculation/date-calculation.service';
+import { IBillingCycleConfig, BillingCycleType } from './date-calculation/interfaces/date-calculation.interface';
 
 /**
  * 訂閱管理服務
@@ -14,6 +16,7 @@ export class SubscriptionService {
     private readonly subscriptionRepository: SubscriptionRepository,
     // TODO: Phase 4.2 - Re-add CustomerRepository when implementing customer management
     // private readonly customerRepository: CustomerRepository,
+    private readonly dateCalculation: DateCalculationService,
   ) {}
 
   /**
@@ -50,11 +53,11 @@ export class SubscriptionService {
       subscription.activate({ reason: 'Initial subscription creation' });
     }
 
-    // 計算首次計費週期
+    // 計算首次計費週期（使用 DateCalculationService）
     const now = new Date();
-    const periodStart = new Date(now);
-    const periodEnd = this.calculateNextBillingDate(now, billingCycle);
-    subscription.updateBillingPeriod(periodStart, periodEnd, periodEnd);
+    const periodConfig = this.mapBillingCycleToConfig(billingCycle);
+    const { periodStart, periodEnd, billingDate } = this.dateCalculation.calculateBillingPeriod(now, periodConfig);
+    subscription.updateBillingPeriod(periodStart, periodEnd, billingDate);
 
     return await this.subscriptionRepository.save(subscription);
   }
@@ -128,7 +131,12 @@ export class SubscriptionService {
       throw new Error(`Subscription with ID ${subscriptionId} not found`);
     }
 
-    subscription.recordSuccessfulBilling();
+    // 使用 DateCalculationService 計算下一期
+    const periodConfig = this.mapBillingCycleToConfig(subscription.billingCycle.type);
+    const billingAnchor = subscription.currentPeriod.endDate; // 以當前期結束日為下一期起點
+    const { periodStart, periodEnd, billingDate } = this.dateCalculation.calculateBillingPeriod(billingAnchor, periodConfig);
+
+    subscription.recordSuccessfulBilling({ periodStart, periodEnd, nextBillingDate: billingDate });
     return await this.subscriptionRepository.save(subscription);
   }
 
@@ -156,27 +164,20 @@ export class SubscriptionService {
   /**
    * 計算下次計費日期
    */
-  private calculateNextBillingDate(currentDate: Date, billingCycle: BillingCycle): Date {
-    const nextDate = new Date(currentDate);
-
-    switch (billingCycle) {
-      case BillingCycle.MONTHLY:
-        nextDate.setMonth(nextDate.getMonth() + 1);
-        break;
-      case BillingCycle.YEARLY:
-        nextDate.setFullYear(nextDate.getFullYear() + 1);
-        break;
-      case BillingCycle.QUARTERLY:
-        nextDate.setMonth(nextDate.getMonth() + 3);
-        break;
+  private mapBillingCycleToConfig(cycle: BillingCycle): IBillingCycleConfig {
+    switch (cycle) {
       case BillingCycle.WEEKLY:
-        nextDate.setDate(nextDate.getDate() + 7);
-        break;
+        return { type: BillingCycleType.WEEKLY, interval: 1 };
+      case BillingCycle.MONTHLY:
+        return { type: BillingCycleType.MONTHLY, interval: 1 };
+      case BillingCycle.QUARTERLY:
+        return { type: BillingCycleType.QUARTERLY, interval: 1 };
+      case BillingCycle.YEARLY:
+        return { type: BillingCycleType.ANNUALLY, interval: 1 };
       default:
-        throw new Error(`Unsupported billing cycle: ${billingCycle}`);
+        // 預設以月為週期處理
+        return { type: BillingCycleType.MONTHLY, interval: 1 };
     }
-
-    return nextDate;
   }
 
   /**

@@ -32,10 +32,11 @@ import { ProductApplicationService } from './application/product.application.ser
 import { SubscriptionApplicationService } from './application/subscription.application.service';
 // Payment Module
 import { PaymentModule } from './domain/services/payment/payment.module';
+import { DateCalculationModule } from './domain/services/date-calculation/date-calculation.module';
 import { AppExceptionFilter } from './app-components/app-exception.filter';
 import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
 @Module({
-  imports: [CommonModule, PaymentModule],
+  imports: [CommonModule, PaymentModule, DateCalculationModule],
   controllers: [
     AppController,
     ExampleController,

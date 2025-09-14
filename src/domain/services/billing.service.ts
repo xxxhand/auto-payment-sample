@@ -3,6 +3,7 @@ import { SubscriptionEntity } from '../entities';
 import { PaymentEntity } from '../entities';
 import { SubscriptionRepository } from '../../infra/repositories/subscription.repository';
 import { PaymentService } from './payment.service';
+import { SubscriptionService } from './subscription.service';
 import { CustomDefinition } from '@xxxhand/app-common';
 
 /**
@@ -14,6 +15,7 @@ export class BillingService {
   constructor(
     private readonly subscriptionRepository: SubscriptionRepository,
     private readonly paymentService: PaymentService,
+    private readonly subscriptionService: SubscriptionService,
   ) {}
 
   /**
@@ -85,8 +87,8 @@ export class BillingService {
     // 更新訂閱狀態 - 記錄成功計費
     const subscription = await this.subscriptionRepository.findById(payment.subscriptionId);
     if (subscription) {
-      subscription.recordSuccessfulBilling();
-      await this.subscriptionRepository.save(subscription);
+      // 統一由 SubscriptionService 處理成功扣款後的週期推進與日期計算
+      await this.subscriptionService.recordSuccessfulBilling(subscription.id);
     }
   }
 
