@@ -158,13 +158,13 @@ class Promotion {
     private period: PromotionPeriod,
     private usage: PromotionUsage
   ) {}
-  
+
   static create(params: CreatePromotionParams): Promotion
-  
+
   isApplicable(context: PromotionContext): boolean
   calculateDiscount(originalAmount: Money): DiscountResult
   markAsUsed(subscriptionId: SubscriptionId): void
-  
+
   // 不同優惠類型的工廠方法
   static createStageDiscount(params: StageDiscountParams): Promotion
   static createCouponCode(params: CouponCodeParams): Promotion
@@ -178,14 +178,16 @@ class PromotionRules {
     private applicablePlans: PlanId[],
     private priority: number
   ) {}
-  
+
   apply(amount: Money, context: PromotionContext): Money
 }
 ```
 
+**注意**: 文件中描述的 `Promotion` 類別部分方法（如 `createStageDiscount`、`createCouponCode`）尚未在程式碼中實現，需補充實現。
+
 **領域服務**:
-- `PromotionEngine`: 優惠計算引擎
-- `PromotionPriorityResolver`: 優惠優先級解析服務
+- `PromotionEngine`: 優惠計算引擎（部分功能尚未實現）。
+- `PromotionPriorityResolver`: 優惠優先級解析服務（需補充實現）。
 
 ### 3.4 支付聚合 (Payment Aggregate)
 

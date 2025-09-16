@@ -58,7 +58,7 @@ GET    /api/v1/refunds/subscription/:subscriptionId  // 訂閱退款歷史
 ```
 
 #### 功能特色
-- ✅ **狀態追蹤**: 完整的退款處理狀態（REQUESTED, PROCESSING, COMPLETED, FAILED）
+- ✅ **狀態追蹤**: 完整的退款處理狀態（REQUESTED, PENDING, APPROVED, PROCESSING, SUCCEEDED, FAILED, CANCELED）
 - ✅ **詳細資訊**: 包含處理時間、失敗原因、外部交易ID
 - ✅ **歷史查詢**: 支援訂閱維度的退款歷史彙總
 - ✅ **統計數據**: 總退款金額和成功退款次數
@@ -67,7 +67,7 @@ GET    /api/v1/refunds/subscription/:subscriptionId  // 訂閱退款歷史
 ```json
 {
   "refundId": "ref_1234567890",
-  "status": "COMPLETED",
+  "status": "SUCCEEDED",
   "refundAmount": { "amount": 899, "currency": "TWD" },
   "refundType": "FULL",
   "estimatedProcessingTime": "3-5 business days",

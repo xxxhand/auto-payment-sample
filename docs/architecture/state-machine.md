@@ -1,5 +1,9 @@
 # 狀態機設計 (State Machine Design)
 
+> 現況對齊說明（依程式碼為準）：
+> - 狀態枚舉來源：src/domain/enums/codes.const.ts
+> - 狀態機實作：src/domain/value-objects/state-machine.ts
+
 ## 1. 概述
 
 自動扣款系統中涉及多個核心實體的狀態管理，每個實體都有其特定的狀態轉換規則。本文檔定義了**訂閱**、**支付**、**退款**等核心實體的狀態機設計。
@@ -162,42 +166,45 @@ class SubscriptionStateMachine {
 
 ## 3. 支付狀態機 (Payment State Machine)
 
-### 3.1 狀態定義
+### 3.1 狀態定義（與程式碼一致）
 
 ```typescript
 enum PaymentStatus {
-  PENDING = 'PENDING',           // 處理中
+  PENDING = 'PENDING',           // 處理中（待處理）
   PROCESSING = 'PROCESSING',     // 支付處理中
-  COMPLETED = 'COMPLETED',       // 支付成功
+  SUCCEEDED = 'SUCCEEDED',       // 支付成功
   FAILED = 'FAILED',             // 支付失敗
   RETRYING = 'RETRYING',         // 重試中
-  CANCELED = 'CANCELED',         // 已取消（與程式拼字一致）
+  CANCELED = 'CANCELED',         // 已取消
   REFUNDED = 'REFUNDED',         // 已退款
+  PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED', // 部分退款
 }
 ```
 
-### 3.2 狀態轉換圖
+### 3.2 狀態轉換圖（與實作對齊）
 
 ```mermaid
 stateDiagram-v2
   [*] --> PENDING : 創建支付
 
-  PENDING --> PROCESSING : 開始支付處理
+  PENDING --> PROCESSING : 開始處理
   PENDING --> CANCELED : 取消支付
 
-  PROCESSING --> COMPLETED : 支付成功
+  PROCESSING --> SUCCEEDED : 支付成功
   PROCESSING --> FAILED : 支付失敗
 
   FAILED --> RETRYING : 可重試失敗
-  FAILED --> CANCELED : 不可重試失敗
+  FAILED --> CANCELED : 不可重試
 
   RETRYING --> PROCESSING : 重試支付
   RETRYING --> CANCELED : 重試次數耗盡
 
-  COMPLETED --> REFUNDED : 處理退款
+  SUCCEEDED --> PARTIALLY_REFUNDED : 部分退款
+  SUCCEEDED --> REFUNDED : 全額退款
+  PARTIALLY_REFUNDED --> REFUNDED : 完成剩餘退款
 
   CANCELED --> [*]
-  COMPLETED --> [*]
+  SUCCEEDED --> [*]
   REFUNDED --> [*]
 ```
 
@@ -247,41 +254,43 @@ class PaymentFailureClassifier {
 
 ## 4. 退款狀態機 (Refund State Machine)
 
-### 4.1 狀態定義
+### 4.1 狀態定義（與程式碼一致）
 
 ```typescript
 enum RefundStatus {
-  REQUESTED = 'REQUESTED',       // 已申請
-  REVIEWING = 'REVIEWING',       // 審核中
-  APPROVED = 'APPROVED',         // 已核准
-  PROCESSING = 'PROCESSING',     // 處理中
-  COMPLETED = 'COMPLETED',       // 已完成
-  REJECTED = 'REJECTED',         // 已拒絕
-  FAILED = 'FAILED',             // 處理失敗
+  REQUESTED = 'REQUESTED',   // 已請求
+  PENDING = 'PENDING',       // 審核中
+  APPROVED = 'APPROVED',     // 已批准
+  PROCESSING = 'PROCESSING', // 處理中
+  SUCCEEDED = 'SUCCEEDED',   // 已完成
+  FAILED = 'FAILED',         // 失敗
+  CANCELED = 'CANCELED',     // 已取消
 }
 ```
 
-### 4.2 狀態轉換圖
+### 4.2 狀態轉換圖（與實作對齊）
 
 ```mermaid
 stateDiagram-v2
     [*] --> REQUESTED : 申請退款
-    
-    REQUESTED --> REVIEWING : 進入審核流程
-    REQUESTED --> APPROVED : 自動核准
-    
-    REVIEWING --> APPROVED : 審核通過
-    REVIEWING --> REJECTED : 審核拒絕
-    
-    APPROVED --> PROCESSING : 開始退款處理
-    
-    PROCESSING --> COMPLETED : 退款成功
+
+    REQUESTED --> PENDING : 進入審核
+    REQUESTED --> APPROVED : 自動核准（符合規則）
+    REQUESTED --> CANCELED : 取消申請
+
+    PENDING --> APPROVED : 審核通過
+    PENDING --> FAILED : 審核不通過
+    PENDING --> CANCELED : 取消申請
+
+    APPROVED --> PROCESSING : 開始退款
+
+    PROCESSING --> SUCCEEDED : 退款成功
     PROCESSING --> FAILED : 退款失敗
-    
-    FAILED --> PROCESSING : 重試退款
-    
-    REJECTED --> [*]
-    COMPLETED --> [*]
+
+    FAILED --> PROCESSING : 重新嘗試
+
+    CANCELED --> [*]
+    SUCCEEDED --> [*]
 ```
 
 ## 5. 方案變更狀態機 (Plan Change State Machine)
@@ -547,4 +556,4 @@ class StateMachineMetrics {
 }
 ```
 
-這個狀態機設計提供了清晰的狀態管理機制，確保系統中各個實體的狀態轉換都遵循預定的業務規則，同時提供了良好的監控和追蹤能力。
+結語：本文件已將支付與退款相關的狀態枚舉與轉換與實作對齊（SUCCEEDED/COMPLETED、PENDING/REVIEWING 的命名差異已修正），其餘章節保持既有說明。

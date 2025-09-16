@@ -7,7 +7,7 @@
  */
 
 import 'reflect-metadata';
-import { ProductService, Product } from '../domain/services/product.service';
+import type { Product } from '../domain/services/product.service';
 import { PromotionService } from '../domain/services/promotion.service';
 
 // 設定假資料
@@ -26,12 +26,21 @@ interface NewUserProductResult {
   };
 }
 
+// 安全取得錯誤訊息
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 class NewUserProductFinder {
-  private productService: ProductService;
   private promotionService: PromotionService;
 
   constructor() {
-    this.productService = new ProductService();
     this.promotionService = new PromotionService();
   }
 
@@ -184,7 +193,7 @@ class NewUserProductFinder {
             };
           }
         } catch (error) {
-          console.log(`   ⚠️ ${promotion.code} 計算失敗: ${error.message}`);
+          console.log(`   ⚠️ ${promotion.code} 計算失敗: ${getErrorMessage(error)}`);
         }
       }
 
@@ -207,7 +216,7 @@ class NewUserProductFinder {
         };
       }
     } catch (error) {
-      console.log(`❌ 查找優惠時發生錯誤: ${error.message}`);
+      console.log(`❌ 查找優惠時發生錯誤: ${getErrorMessage(error)}`);
       console.log(`💭 年付產品維持原價: ${product.pricing.amount}`);
 
       return {
@@ -302,7 +311,7 @@ async function main() {
 
     console.log('\n🎉 範例程式執行完成！');
   } catch (error) {
-    console.error('❌ 執行失敗:', error.message);
+    console.error('❌ 執行失敗:', getErrorMessage(error));
     process.exit(1);
   }
 }

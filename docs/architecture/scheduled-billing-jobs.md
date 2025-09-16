@@ -1,6 +1,13 @@
 # 自動扣款排程作業 (Scheduled Billing Jobs)
 
-本文件詳細說明自動扣款系統的排程作業設計，包含任務調度、執行策略、監控機制等。
+> 現況對齊說明（依程式碼為準）：
+> - 目前程式碼庫尚未包含 @nestjs/schedule 或 Bull 之作業實作與 Cron 定義（已掃描未發現 Cron/Bull 相關符號），本文件內容作為設計規劃與示意。
+> - 可直接複用的現有元件：
+>   - 規則引擎：src/domain/services/rules-engine/retry-strategy.engine.ts（RetryStrategyEngine）
+>   - 狀態機：src/domain/value-objects/state-machine.ts（SubscriptionStateMachine / PaymentStateMachine）
+>   - 日期計算：src/domain/value-objects/billing-cycle.ts（BillingCycleVO / BillingPeriod）
+>
+> 註：下列 TypeScript 片段為示意程式碼，實作時請先新增相應模組與依賴（@nestjs/schedule、@nestjs/bull、ioredis 等）。
 
 ## 1. 排程架構概覽
 
@@ -53,7 +60,7 @@ flowchart TB
 ### 2.1 作業排程
 
 ```typescript
-// daily-billing.job.ts
+// daily-billing.job.ts（示意）
 @Injectable()
 export class DailyBillingJob {
   constructor(
@@ -61,44 +68,19 @@ export class DailyBillingJob {
     private readonly jobQueue: Queue,
   ) {}
 
-  @Cron('0 0 * * *', { // 每日 00:00 執行
+  @Cron('0 0 * * *', {
     name: 'daily-billing',
     timeZone: 'Asia/Taipei',
   })
   async handleDailyBilling() {
     const today = new Date();
     const batchSize = 100;
-    let offset = 0;
-    
-    // 查詢當日需要扣款的訂閱
-    const subscriptions = await this.findDueSubscriptions(today, batchSize, offset);
-    
-    for (const batch of this.chunkArray(subscriptions, batchSize)) {
-      await this.jobQueue.add('process-billing-batch', {
-        subscriptions: batch,
-        billingDate: today,
-        batchId: uuidv4(),
-      }, {
-        attempts: 3,
-        backoff: {
-          type: 'exponential',
-          delay: 2000,
-        },
-      });
-    }
-  }
 
-  private async findDueSubscriptions(targetDate: Date, batchSize: number, offset: number): Promise<Subscription[]> {
-    // 使用日期計算演算法確保正確的扣款日期比較
-    // 詳細演算法請參考：docs/architecture/date-calculation-algorithms.md
-    
-    const startOfDay = new Date(targetDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    
-    const endOfDay = new Date(targetDate);
-    endOfDay.setHours(23, 59, 59, 999);
-    
-    return await this.subscriptionRepository.findDueForBilling(startOfDay, endOfDay, batchSize, offset);
+    // 透過 BillingCycleVO 與訂閱查詢取得到期名單（實作需補 Repository）
+    // const subscriptions = await this.subscriptionRepository.findDueForBilling(...)
+
+    // 送入批次處理佇列（需先建立 BullModule 與 Queue）
+    // await this.jobQueue.add('process-billing-batch', {...})
   }
 }
 ```
@@ -187,34 +169,12 @@ export const RETRY_STRATEGIES = {
 ### 3.2 重試排程作業
 
 ```typescript
-// retry-billing.job.ts
+// retry-billing.job.ts（示意）
 @Injectable()
 export class RetryBillingJob {
-  @Cron('*/15 * * * *') // 每15分鐘檢查一次
+  @Cron('*/15 * * * *')
   async handleRetryableFailures() {
-    await this.processRetryType('RETRIABLE');
-  }
-
-  @Cron('0 */6 * * *') // 每6小時檢查一次
-  async handleDelayedRetries() {
-    await this.processRetryType('DELAYED_RETRY');
-  }
-
-  @Cron('0 9 * * *') // 每日上午9點檢查
-  async handleGracePeriodRetries() {
-    await this.processRetryType('GRACE_PERIOD');
-  }
-
-  private async processRetryType(retryType: string) {
-    const dueRetries = await this.findDueRetries(retryType);
-    
-    for (const retry of dueRetries) {
-      await this.jobQueue.add('process-retry', {
-        subscriptionId: retry.subscriptionId,
-        retryType: retry.failureCategory,
-        attemptNumber: retry.retryCount + 1,
-      });
-    }
+    // 使用 RetryStrategyEngine 決策是否重試與下次重試時間
   }
 }
 ```
@@ -327,6 +287,8 @@ graph TB
 ```
 
 ## 5. 日期計算邏輯
+
+> 對齊：請參考 docs/architecture/date-calculation-algorithms.md 與 BillingCycleVO。
 
 ### 5.1 扣款日期計算邏輯
 本模組使用專門的日期計算演算法處理複雜的計費週期計算：
@@ -463,4 +425,10 @@ export class ConfigUpdaterService {
 }
 ```
 
-這個文件涵蓋了自動扣款排程作業的完整設計。接下來讓我創建使用者情境文件。
+## 9. 後續實作建議
+
+- 新增 Infrastructure 模組並導入 @nestjs/schedule。
+- 新增 Queue 模組並導入 @nestjs/bull 與 Redis。
+- 建立 SubscriptionRepository.findDueForBilling(...) 以支援批次查詢。
+- 以 RetryStrategyEngine 決策重試策略，並在 SubscriptionStateMachine 中記錄重試結果。
+- 以 Prometheus/Grafana 或 Bull Dashboard 觀測作業指標。

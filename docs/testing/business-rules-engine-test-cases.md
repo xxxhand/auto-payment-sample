@@ -4,11 +4,18 @@
 
 本文檔詳細記錄了業務規則引擎的所有測試案例，包括規則評估器、規則註冊表和主引擎的功能測試。
 
-## 測試統計
+> 現況對齊（依程式碼為準）：
+> - 規則評估器：src/domain/services/rules-engine/rule-evaluator.service.ts（類名：RuleEvaluator）
+> - 介面與運算子：src/domain/services/rules-engine/interfaces/rules-engine.interface.ts（RuleOperator、IRuleAction 等）
+> - 支援的運算子：EQUALS、NOT_EQUALS、GREATER_THAN、LESS_THAN、GREATER_THAN_OR_EQUAL、LESS_THAN_OR_EQUAL、CONTAINS、NOT_CONTAINS、IN、NOT_IN、REGEX
+> - 支援的動作：SET_VALUE、CALCULATE_DISCOUNT、APPLY_FREE_PERIOD、MODIFY_RETRY_COUNT、SET_RETRY_DELAY、APPROVE_REFUND、REJECT_REFUND
 
-- **總測試數量**: 45個
-- **測試通過率**: 100%
-- **測試覆蓋範圍**: 完整的功能覆蓋，包括正常流程和異常處理
+## 測試覆蓋範圍
+
+- 條件評估：標量比較、集合判斷、Regex
+- 動作執行：值設定、折扣計算、免費期、重試次數/延遲、退款審核
+- 規則註冊與查詢：新增、更新、刪除、查詢
+- 例外處理：未知運算子/動作的防護
 
 ## 規則評估器 (RuleEvaluator) 測試案例
 
@@ -22,31 +29,36 @@
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should evaluate simple condition - equals | 評估簡單的等於條件 | `{ field: 'status', operator: 'equals', value: 'active' }` <br> 上下文: `{ status: 'active' }` | `true` | ✅ |
-| should evaluate simple condition - not equals | 評估簡單的不等於條件 | `{ field: 'status', operator: 'not_equals', value: 'inactive' }` <br> 上下文: `{ status: 'active' }` | `true` | ✅ |
-| should evaluate simple condition - greater than | 評估大於條件 | `{ field: 'amount', operator: 'greater_than', value: 100 }` <br> 上下文: `{ amount: 150 }` | `true` | ✅ |
-| should evaluate simple condition - less than | 評估小於條件 | `{ field: 'amount', operator: 'less_than', value: 200 }` <br> 上下文: `{ amount: 150 }` | `true` | ✅ |
-| should evaluate simple condition - in | 評估包含條件 | `{ field: 'category', operator: 'in', value: ['A', 'B'] }` <br> 上下文: `{ category: 'A' }` | `true` | ✅ |
-| should evaluate simple condition - not in | 評估不包含條件 | `{ field: 'category', operator: 'not_in', value: ['A', 'B'] }` <br> 上下文: `{ category: 'C' }` | `true` | ✅ |
-| should handle unknown operator | 處理未知運算子 | `{ field: 'status', operator: 'unknown', value: 'active' }` | `false` | ✅ |
-| should handle missing field | 處理缺失欄位 | `{ field: 'missing', operator: 'equals', value: 'active' }` <br> 上下文: `{ status: 'active' }` | `false` | ✅ |
+| should evaluate simple condition - EQUALS | 評估等於 | `{ field: 'status', operator: 'EQUALS', value: 'active' }` <br> 上下文: `{ status: 'active' }` | `true` | ✅ |
+| should evaluate simple condition - NOT_EQUALS | 評估不等於 | `{ field: 'status', operator: 'NOT_EQUALS', value: 'inactive' }` <br> 上下文: `{ status: 'active' }` | `true` | ✅ |
+| should evaluate simple condition - GREATER_THAN | 評估大於 | `{ field: 'amount', operator: 'GREATER_THAN', value: 100 }` <br> 上下文: `{ amount: 150 }` | `true` | ✅ |
+| should evaluate simple condition - LESS_THAN | 評估小於 | `{ field: 'amount', operator: 'LESS_THAN', value: 200 }` <br> 上下文: `{ amount: 150 }` | `true` | ✅ |
+| should evaluate simple condition - IN | 評估包含 | `{ field: 'category', operator: 'IN', value: ['A', 'B'] }` <br> 上下文: `{ category: 'A' }` | `true` | ✅ |
+| should evaluate simple condition - NOT_IN | 評估不包含 | `{ field: 'category', operator: 'NOT_IN', value: ['A', 'B'] }` <br> 上下文: `{ category: 'C' }` | `true` | ✅ |
+| should evaluate simple condition - REGEX | 評估正則 | `{ field: 'email', operator: 'REGEX', value: '^.+@example\\.com$' }` <br> 上下文: `{ email: 'a@example.com' }` | `true` | ✅ |
+| should handle unknown operator | 處理未知運算子 | `{ field: 'status', operator: 'UNKNOWN', value: 'active' }` | `false` | ✅ |
+| should handle missing field | 處理缺失欄位 | `{ field: 'missing', operator: 'EQUALS', value: 'active' }` <br> 上下文: `{ status: 'active' }` | `false` | ✅ |
 
 ### 複合條件測試
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
 | should evaluate AND conditions | 評估 AND 邏輯條件 | 兩個條件都為真的 AND 組合 | `true` | ✅ |
-| should evaluate OR conditions | 評估 OR 邏輯條件 | 其中一個條件為真的 OR 組合 | `true` | ✅ |
-| should evaluate nested conditions | 評估嵌套條件 | 複雜的嵌套 AND/OR 組合 | 正確的邏輯結果 | ✅ |
+| should evaluate OR conditions (組合規則層) | 評估 OR 邏輯條件 | 將 OR 規則拆為兩條規則，在規則引擎層以 OR 聚合 | `true` | ✅ |
+| should evaluate nested conditions (聚合層) | 評估嵌套條件 | 在規則引擎聚合層模擬嵌套 AND/OR | 正確的邏輯結果 | ✅ |
 
 ### 動作執行測試
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should execute CALCULATE action | 執行計算動作 | `{ type: 'CALCULATE', config: { operation: 'add', value: 10 } }` <br> 上下文: `{ amount: 100 }` | 上下文更新為 `{ amount: 110 }` | ✅ |
-| should execute UPDATE_FIELD action | 執行欄位更新動作 | `{ type: 'UPDATE_FIELD', config: { field: 'status', value: 'processed' } }` | 上下文欄位被更新 | ✅ |
-| should execute LOG action | 執行日誌動作 | `{ type: 'LOG', config: { level: 'info', message: 'Test message' } }` | 日誌被記錄 | ✅ |
-| should handle unknown action | 處理未知動作類型 | `{ type: 'UNKNOWN_ACTION' }` | 拋出錯誤 | ✅ |
+| should execute SET_VALUE action | 執行設定值動作 | `{ actionType: 'SET_VALUE', parameters: { field: 'status', value: 'processed' } }` | 回傳包含 originalValue/new value 的結果 | ✅ |
+| should execute CALCULATE_DISCOUNT action | 執行折扣計算 | `{ actionType: 'CALCULATE_DISCOUNT', parameters: { discountType: 'PERCENTAGE', discountValue: 10, maxDiscount: 100 } }` <br> 上下文含 `amount` | 回傳折扣金額與最終金額 | ✅ |
+| should execute APPLY_FREE_PERIOD action | 執行免費期 | `{ actionType: 'APPLY_FREE_PERIOD', parameters: { periodCount: 7, periodUnit: 'DAY', description: 'trial' } }` | 回傳套用資訊 | ✅ |
+| should execute MODIFY_RETRY_COUNT action | 調整重試次數 | `{ actionType: 'MODIFY_RETRY_COUNT', parameters: { retryCount: 5, reason: 'VIP' } }` | 回傳 newRetryCount | ✅ |
+| should execute SET_RETRY_DELAY action | 設定重試延遲 | `{ actionType: 'SET_RETRY_DELAY', parameters: { delayMinutes: 30, reason: 'cooldown' } }` | 回傳 nextRetryTime | ✅ |
+| should execute APPROVE_REFUND action | 批准退款 | `{ actionType: 'APPROVE_REFUND', parameters: { refundAmount: 100, reason: 'policy' } }` | 回傳退款資訊 | ✅ |
+| should execute REJECT_REFUND action | 拒絕退款 | `{ actionType: 'REJECT_REFUND', parameters: { reason: 'fraud suspected' } }` | 回傳拒絕資訊 | ✅ |
+| should handle unknown action | 處理未知動作類型 | `{ actionType: 'UNKNOWN_ACTION' }` | 拋出錯誤 | ✅ |
 
 ## 規則註冊表 (RuleRegistry) 測試案例
 
@@ -121,13 +133,6 @@
 |---------|---------|---------|---------|------|
 | should complete full workflow | 完成完整的業務流程 | 註冊規則 → 執行規則 → 驗證結果 | 整個流程順利完成 | ✅ |
 | should handle complex business scenarios | 處理複雜的業務場景 | 多層級的規則條件和動作 | 正確執行複雜的業務邏輯 | ✅ |
-
-## 效能測試案例
-
-| 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
-|---------|---------|---------|---------|------|
-| should handle large rule sets efficiently | 高效處理大量規則集 | 100+ 個規則同時執行 | 在合理時間內完成執行 | ✅ |
-| should handle complex nested conditions | 處理複雜嵌套條件 | 深度嵌套的 AND/OR 條件 | 正確且高效地評估條件 | ✅ |
 
 ## 總結
 

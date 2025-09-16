@@ -63,16 +63,16 @@ Given 用戶已登入系統
 When 用戶點擊 "開始訂閱" 按鈕
 Then 系統應該執行首次扣款
   And 創建訂閱記錄，狀態為 "ACTIVE"
-  And 設定下次扣款日期為 30 天後
+  And 設定下次扣款日期為下個週期（依 BillingCycleVO 月度規則）
   And 發送訂閱確認 Email
   And 用戶可以立即使用服務
 ```
 
 **驗收標準**：
 - [ ] 訂閱記錄成功創建在資料庫中
-- [ ] 首次扣款交易狀態為 `COMPLETED`
-- [ ] `nextBillingDate` 設定正確（創建日 + 30天）
-- [ ] `serviceEndDate` 設定正確（創建日 + 30天）
+- [ ] 首次扣款交易狀態為 `SUCCEEDED`
+- [ ] `nextBillingDate` 依 BillingCycleVO 月度規則計算（次月對應日；若無對應日則取月底）
+- [ ] `serviceEndDate` 依 BillingCycleVO 計算的期間結束日
 - [ ] 確認 Email 已發送到用戶信箱
 - [ ] 用戶權限已正確分配
 
@@ -163,7 +163,7 @@ describe('自動扣款流程', () => {
     expect(updatedSubscription.billingCycleCount).toBe(2);
     
     const paymentRecord = await testDb.purchaseHistory.findLatest('sub_test_001');
-    expect(paymentRecord.status).toBe('COMPLETED');
+    expect(paymentRecord.status).toBe('SUCCEEDED');
     expect(paymentRecord.amount).toBe(299);
   });
 });
@@ -180,9 +180,9 @@ describe('自動扣款流程', () => {
 **測試矩陣**：
 | 失敗原因 | 失敗類型 | 預期重試 | 預期狀態 | 通知類型 |
 |----------|----------|----------|----------|----------|
-| 餘額不足 | DELAYED_RETRY | 1天後 | ACTIVE | 餘額提醒 |
-| 卡片過期 | DELAYED_RETRY | 3天後 | ACTIVE | 更新卡片 |
-| 網路逾時 | RETRIABLE | 5分鐘後 | ACTIVE | 無 |
+| 餘額不足 | DELAYED_RETRY | 1天後 | GRACE_PERIOD | 餘額提醒 |
+| 卡片過期 | DELAYED_RETRY | 3天後 | GRACE_PERIOD | 更新卡片 |
+| 網路逾時 | RETRIABLE | 5分鐘後 | RETRY | 無 |
 | 銀行拒絕 | NON_RETRIABLE | 不重試 | EXPIRED | 聯繫客服 |
 
 ### 2.3 智能重試測試 (Smart Retry)
@@ -273,10 +273,10 @@ describe('方案升級', () => {
     
     // Assert
     expect(result.prorationAmount).toBe(200);
-    expect(result.prorationPayment.status).toBe('COMPLETED');
+    expect(result.prorationPayment.status).toBe('SUCCEEDED');
     expect(result.subscription.currentPlanId).toBe('pro_monthly');
     
-    // 驗證歷史記錄
+    // 驗證歷史記錄（方案變更狀態仍為 COMPLETED）
     const changeHistory = await testDb.planChangeHistory.findLatest('sub_001');
     expect(changeHistory.effectiveDate).toBeCloseTo(new Date(), 1000);
     expect(changeHistory.status).toBe('COMPLETED');
@@ -496,7 +496,7 @@ Scenario: 首次扣款成功
   Given Alice 的訂閱已創建 30 天
   When 系統執行自動扣款
   Then 扣款應該成功
-  And Alice 的服務應該延續 30 天
+  And Alice 的服務應該依 BillingCycleVO 規則延續
   And 她應該收到扣款成功通知
 
 Scenario: 方案升級

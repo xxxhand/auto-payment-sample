@@ -4,11 +4,17 @@
 
 本文檔詳細記錄了日期計算服務的所有測試案例，包括基本功能測試和複雜邊緣情況處理。
 
-## 測試統計
+> 現況對齊說明（依程式碼為準）：
+> - 現行實作以 BillingCycleVO 與 BillingPeriod 為核心（src/domain/value-objects/billing-cycle.ts）。
+> - 文件中涉及的「營業日/假日/時區」調整屬延伸能力，尚未在程式碼中提供實作，相關案例為示意或後續擴充測試（表格中以「示意」標示，非現行自動測試）。
 
-- **總測試數量**: 72個
-- **測試通過率**: 100%
-- **測試覆蓋範圍**: 完整的日期計算功能，包括各種計費週期和邊緣情況
+## 測試覆蓋範圍
+
+- 計費週期：每日/每週/每月/每季/每年與自訂間隔
+- 計費期間計算：startDate/endDate 與剩餘天數
+- 月末與閏年處理：月底對齊與 2/29 邊界
+- 按比例計算（proration）：以平均天數估算的比例金額
+- 延伸（示意）：營業日/假日/時區相關案例
 
 ## 基本功能測試案例
 
@@ -28,7 +34,7 @@
 | should calculate next monthly billing date with specific day | 計算特定日期的月計費 | 當前日期: 2024-01-15 <br> 上次計費: 2024-01-01 <br> 指定日期: 每月10號 | 下次計費: 2024-02-10 | ✅ |
 | should calculate next quarterly billing date | 計算下個季計費日期 | 當前日期: 2024-02-15 <br> 上次計費: 2024-01-15 <br> 間隔: 1季 | 下次計費: 2024-04-15 <br> 週期數: 1 | ✅ |
 | should calculate next annual billing date | 計算下個年計費日期 | 當前日期: 2024-06-15 <br> 上次計費: 2024-01-15 <br> 間隔: 1年 | 下次計費: 2025-01-15 <br> 週期數: 1 | ✅ |
-| should apply business day adjustment | 套用營業日調整 | 計費日期落在週末 <br> 調整類型: 下個營業日 | 調整到下個營業日 | ✅ |
+| should apply business day adjustment | 套用營業日調整 | 計費日期落在週末 <br> 調整類型: 下個營業日 | 調整到下個營業日 | 示意 |
 | should handle prorated billing | 處理按比例計費 | 部分使用期間的計費計算 | 按比例計算正確金額 | ✅ |
 
 ### 試用期結束日期計算測試
@@ -39,7 +45,7 @@
 | should calculate trial end date in weeks | 計算以週為單位的試用期 | 開始日期: 2024-01-15 <br> 試用期: 2週 | 結束日期: 2024-01-29 | ✅ |
 | should calculate trial end date in months | 計算以月為單位的試用期 | 開始日期: 2024-01-15 <br> 試用期: 1月 | 結束日期: 2024-02-15 | ✅ |
 | should exclude start date when configured | 配置時排除開始日期 | 開始日期: 2024-01-15 <br> 排除開始日期: true <br> 試用期: 7天 | 結束日期: 2024-01-23 | ✅ |
-| should calculate business days only trial | 計算僅營業日的試用期 | 開始日期: 2024-01-15 (週一) <br> 試用期: 5個營業日 | 結束日期: 2024-01-19 (週五) | ✅ |
+| should calculate business days only trial | 計算僅營業日的試用期 | 開始日期: 2024-01-15 (週一) <br> 試用期: 5個營業日 | 結束日期: 2024-01-19 (週五) | 示意 |
 
 ### 帳單週期資訊計算測試
 
@@ -53,7 +59,7 @@
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should calculate prorated amount for partial usage | 計算部分使用的按比例金額 | 總金額: $100 <br> 週期: 2024-01-01 到 2024-01-31 <br> 使用: 2024-01-01 到 2024-01-15 | 按比例金額: $48.39 <br> 使用天數: 15 <br> 總天數: 31 | ✅ |
+| should calculate prorated amount for partial usage | 計算部分使用的按比例金額 | 總金額: $100 <br> 週期: 2024-01-01 到 2024-01-31 <br> 使用: 2024-01-01 到 2024-01-15 | 按比例金額: $47 <br> 使用天數: 14 <br> 基於平均天數: 30 | ✅ |
 | should handle usage period outside billing period | 處理使用期間超出帳單週期 | 使用期間完全在帳單週期外 | 按比例金額: $0 | ✅ |
 | should handle zero usage days | 處理零使用天數 | 使用開始和結束日期相同 | 按比例金額: $0 | ✅ |
 
@@ -61,35 +67,35 @@
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should calculate business days excluding weekends | 計算排除週末的營業日 | 開始: 2024-01-15 (週一) <br> 結束: 2024-01-19 (週五) | 營業日數: 5 | ✅ |
-| should exclude weekends from business days | 從營業日中排除週末 | 包含週末的日期範圍 | 正確排除週六和週日 | ✅ |
-| should exclude holidays when configured | 配置時排除假日 | 包含假日的日期範圍 <br> 假日清單: [2024-01-17] | 營業日數: 4 (排除假日) | ✅ |
+| should calculate business days excluding weekends | 計算排除週末的營業日 | 開始: 2024-01-15 (週一) <br> 結束: 2024-01-19 (週五) | 營業日數: 5 | 示意 |
+| should exclude weekends from business days | 從營業日中排除週末 | 包含週末的日期範圍 | 正確排除週六和週日 | 示意 |
+| should exclude holidays when configured | 配置時排除假日 | 包含假日的日期範圍 <br> 假日清單: [2024-01-17] | 營業日數: 4 (排除假日) | 示意 |
 
 ### 日期調整測試
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should not adjust date when type is NONE | 調整類型為 NONE 時不調整日期 | 日期: 2024-01-13 (週六) <br> 調整類型: NONE | 日期保持不變: 2024-01-13 | ✅ |
-| should adjust to next business day | 調整到下個營業日 | 日期: 2024-01-13 (週六) <br> 調整類型: NEXT_BUSINESS_DAY | 調整到: 2024-01-15 (週一) | ✅ |
-| should adjust to month end | 調整到月末 | 日期: 2024-01-15 <br> 調整類型: MONTH_END | 調整到: 2024-01-31 | ✅ |
-| should adjust to month start | 調整到月初 | 日期: 2024-01-15 <br> 調整類型: MONTH_START | 調整到: 2024-01-01 | ✅ |
-| should skip weekend | 跳過週末 | 各種週末日期 | 正確跳過到營業日 | ✅ |
+| should not adjust date when type is NONE | 調整類型為 NONE 時不調整日期 | 日期: 2024-01-13 (週六) <br> 調整類型: NONE | 日期保持不變: 2024-01-13 | 示意 |
+| should adjust to next business day | 調整到下個營業日 | 日期: 2024-01-13 (週六) <br> 調整類型: NEXT_BUSINESS_DAY | 調整到: 2024-01-15 (週一) | 示意 |
+| should adjust to month end | 調整到月末 | 日期: 2024-01-15 <br> 調整類型: MONTH_END | 調整到: 2024-01-31 | 示意 |
+| should adjust to month start | 調整到月初 | 日期: 2024-01-15 <br> 調整類型: MONTH_START | 調整到: 2024-01-01 | 示意 |
+| should skip weekend | 跳過週末 | 各種週末日期 | 正確跳過到營業日 | 示意 |
 
 ### 營業日判斷測試
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should return true for weekdays | 工作日應返回 true | 2024-01-15 (週一) | `true` | ✅ |
-| should return false for weekends | 週末應返回 false | 2024-01-13 (週六) | `false` | ✅ |
-| should return false for holidays when configured | 配置假日時返回 false | 假日日期和假日清單 | `false` | ✅ |
+| should return true for weekdays | 工作日應返回 true | 2024-01-15 (週一) | `true` | 示意 |
+| should return false for weekends | 週末應返回 false | 2024-01-13 (週六) | `false` | 示意 |
+| should return false for holidays when configured | 配置假日時返回 false | 假日日期和假日清單 | `false` | 示意 |
 
 ### 假日判斷測試
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should return true for dates in holiday list | 假日清單中的日期返回 true | 日期在假日清單中 | `true` | ✅ |
-| should return false for dates not in holiday list | 不在假日清單的日期返回 false | 日期不在假日清單中 | `false` | ✅ |
-| should return false when no holiday list provided | 未提供假日清單時返回 false | 沒有假日清單 | `false` | ✅ |
+| should return true for dates in holiday list | 假日清單中的日期返回 true | 日期在假日清單中 | `true` | 示意 |
+| should return false for dates not in holiday list | 不在假日清單的日期返回 false | 日期不在假日清單中 | `false` | 示意 |
+| should return false when no holiday list provided | 未提供假日清單時返回 false | 沒有假日清單 | `false` | 示意 |
 
 ### 日期序列產生測試
 
@@ -112,10 +118,10 @@
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should format date in specified timezone | 格式化指定時區的日期 | 日期: 2024-01-15T10:00:00Z | 格式化結果: "2024-01-15" | ✅ |
-| should format date as ISO when requested | 請求時格式化為 ISO 格式 | 日期: 2024-01-15T10:00:00Z | 格式化結果: "2024-01-15" | ✅ |
-| should parse ISO date string | 解析 ISO 日期字串 | "2024-01-15T10:00:00.000Z" | 正確的 Date 對象 | ✅ |
-| should parse simple date string | 解析簡單日期字串 | "2024-01-15" | 正確的 Date 對象 | ✅ |
+| should format date in specified timezone | 格式化指定時區的日期 | 日期: 2024-01-15T10:00:00Z | 格式化結果: "2024-01-15" | 示意 |
+| should format date as ISO when requested | 請求時格式化為 ISO 格式 | 日期: 2024-01-15T10:00:00Z | 格式化結果: "2024-01-15" | 示意 |
+| should parse ISO date string | 解析 ISO 日期字串 | "2024-01-15T10:00:00.000Z" | 正確的 Date 對象 | 示意 |
+| should parse simple date string | 解析簡單日期字串 | "2024-01-15" | 正確的 Date 對象 | 示意 |
 
 ### 錯誤處理測試
 
@@ -153,15 +159,15 @@
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should handle daylight saving time transitions | 處理夏令時轉換 | DST 轉換日期的計算 | 正確處理時區變化 | ✅ |
-| should handle UTC midnight boundary | 處理 UTC 午夜邊界 | UTC 午夜前後的日期 | 正確處理日期邊界 | ✅ |
+| should handle daylight saving time transitions | 處理夏令時轉換 | DST 轉換日期的計算 | 正確處理時區變化 | 示意 |
+| should handle UTC midnight boundary | 處理 UTC 午夜邊界 | UTC 午夜前後的日期 | 正確處理日期邊界 | 示意 |
 
 ### 營業日複雜場景測試
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should handle multiple consecutive holidays | 處理連續多個假日 | 包含連續假日的期間 | 正確跳過所有假日 | ✅ |
-| should calculate business days spanning multiple weeks with holidays | 計算跨多週含假日的營業日 | 跨週期間內有假日 | 正確計算營業日數 | ✅ |
+| should handle multiple consecutive holidays | 處理連續多個假日 | 包含連續假日的期間 | 正確跳過所有假日 | 示意 |
+| should calculate business days spanning multiple weeks with holidays | 計算跨多週含假日的營業日 | 跨週期間內有假日 | 正確計算營業日數 | 示意 |
 
 ### 按比例計費邊緣情況測試
 
@@ -189,22 +195,22 @@
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should handle trial period with business days only across month boundary | 處理跨月邊界的僅營業日試用期 | 試用期跨越月份邊界 | 正確計算跨月營業日 | ✅ |
-| should handle trial period with many holidays | 處理包含多個假日的試用期 | 試用期內有多個假日 | 正確延長試用期 | ✅ |
+| should handle trial period with business days only across month boundary | 處理跨月邊界的僅營業日試用期 | 試用期跨越月份邊界 | 正確計算跨月營業日 | 示意 |
+| should handle trial period with many holidays | 處理包含多個假日的試用期 | 試用期內有多個假日 | 正確延長試用期 | 示意 |
 
 ### 日期序列產生邊緣情況測試
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should handle date sequence with very large intervals | 處理超大間隔的日期序列 | 間隔: 5年 | 正確產生年度序列 | ✅ |
-| should handle daily sequence with adjustments | 處理帶調整的日期序列 | 日期序列含營業日調整 | 正確調整每個日期 | ✅ |
+| should handle date sequence with very large intervals | 處理超大間隔的日期序列 | 間隔: 5年 | 正確產生年度序列 | 示意 |
+| should handle daily sequence with adjustments | 處理帶調整的日期序列 | 日期序列含營業日調整 | 正確調整每個日期 | 示意 |
 
 ### 效能邊緣情況測試
 
 | 測試案例 | 測試描述 | 輸入條件 | 預期結果 | 狀態 |
 |---------|---------|---------|---------|------|
-| should handle large holiday lists efficiently | 高效處理大假日清單 | 1000+ 假日的清單 | 在合理時間內完成 | ✅ |
-| should handle long date sequences efficiently | 高效處理長日期序列 | 生成1000個日期 | 在合理時間內完成 | ✅ |
+| should handle large holiday lists efficiently | 高效處理大假日清單 | 1000+ 假日的清單 | 在合理時間內完成 | 示意 |
+| should handle long date sequences efficiently | 高效處理長日期序列 | 生成1000個日期 | 在合理時間內完成 | 示意 |
 
 ## 總結
 

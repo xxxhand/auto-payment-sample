@@ -205,7 +205,7 @@ Authorization: Bearer <token>
       {
         "paymentId": "pay_1234567890",
         "amount": 899,
-        "status": "COMPLETED",
+        "status": "SUCCEEDED",
         "paidAt": "2024-01-01T00:00:00Z"
       }
     ],
@@ -266,6 +266,23 @@ Authorization: Bearer <token>
   }
 }
 ```
+
+##### 2.1.4.1 按比例計費規則（Proration Policy）
+
+- 計算依據：以值物件 BillingCycleVO 的平均天數估算法為準（現行實作）
+  - 月繳 baseDays = 30
+  - 年繳 baseDays = 365
+- 計算區間：以當前帳單週期內「剩餘天數」為基礎（BillingCycleVO 內部處理起訖邏輯與月末/閏年）
+- 金額公式（IMMEDIATE + CREATE_PRORATION 時適用）：
+  - creditAmount = fromPlan.amount × remainingDays ÷ baseDays
+  - chargeAmount = toPlan.amount × remainingDays ÷ baseDays
+  - netAmount = max(0, round(chargeAmount − creditAmount))
+- 進位規則：四捨五入到最小貨幣單位（TWD 以整數元計）
+- 範例（月繳 299 → 月繳 599，週期剩 20/30 天）：
+  - creditAmount = 299 × 20/30 ≈ 199.33 → 199
+  - chargeAmount = 599 × 20/30 ≈ 399.33 → 399
+  - netAmount = 399 − 199 = 200
+- 備註：若 prorationMode = "NONE"，則不計按比例金額，於下一週期生效。
 
 #### 2.1.5 暫停/恢復訂閱
 
@@ -438,7 +455,7 @@ Authorization: Bearer <token>
 #### 2.4.1 查詢支付歷史
 
 ```http
-GET /api/v1/subscriptions/{subscriptionId}/payments?page=1&limit=10&status=COMPLETED
+GET /api/v1/subscriptions/{subscriptionId}/payments?page=1&limit=10&status=SUCCEEDED
 Authorization: Bearer <token>
 ```
 
@@ -459,7 +476,7 @@ Authorization: Bearer <token>
           "final": 899,
           "currency": "TWD"
         },
-        "status": "COMPLETED",
+        "status": "SUCCEEDED",
         "billingCycle": {
           "cycleNumber": 1,
           "periodStart": "2024-01-01T00:00:00Z",
