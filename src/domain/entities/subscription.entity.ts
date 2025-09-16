@@ -1,6 +1,7 @@
 import { BaseEntity } from './base-entity.abstract';
 import { SubscriptionStatus, PlanChangeType, CancellationReason } from '../enums/codes.const';
 import { Money, BillingCycleVO, BillingPeriod, SubscriptionStateMachine, TransitionContext, TransitionResult } from '../value-objects';
+import { SubscriptionCreated, SubscriptionStatusChanged, SubscriptionPlanChanged, SubscriptionRefunded } from '../events/subscription.events';
 
 /**
  * 狀態歷史項目
@@ -186,6 +187,32 @@ export class SubscriptionEntity extends BaseEntity {
 
     // 生成業務ID
     this.subscriptionId = this.generateSubscriptionId();
+
+    // 觸發領域事件：訂閱建立
+    this.addDomainEvent(new SubscriptionCreated(this.subscriptionId, this.customerId, this.productId, this.planId));
+  }
+
+  /**
+   * 靜態工廠：建立訂閱（文件風格）
+   */
+  static create(params: {
+    customerId: string;
+    productId: string;
+    planId: string;
+    paymentMethodId: string;
+    baseAmount: Money;
+    billingCycle: BillingCycleVO;
+  }): SubscriptionEntity {
+    const entity = new SubscriptionEntity(
+      params.customerId,
+      params.productId,
+      params.planId,
+      params.paymentMethodId,
+      params.baseAmount,
+      params.billingCycle,
+    );
+    // 已於建構子內發出 SubscriptionCreated 事件
+    return entity;
   }
 
   /**
@@ -206,6 +233,9 @@ export class SubscriptionEntity extends BaseEntity {
         reason: context.reason,
         actor: context.actor,
       });
+
+      // 發佈狀態變更事件
+      this.addDomainEvent(new SubscriptionStatusChanged(this.subscriptionId, oldStatus, newStatus, context.reason));
 
       this.touch();
     }
@@ -333,6 +363,8 @@ export class SubscriptionEntity extends BaseEntity {
 
     if (result.isValid && this.cancellation) {
       this.cancellation.refundAmount = refundAmount;
+      // 發佈退款事件
+      this.addDomainEvent(new SubscriptionRefunded(this.subscriptionId, refundAmount));
     }
 
     return result;
@@ -360,9 +392,14 @@ export class SubscriptionEntity extends BaseEntity {
 
     const now = new Date();
     if (now >= this.pendingPlanChange.effectiveAt) {
+      const oldPlanId = this.planId;
       this.planId = this.pendingPlanChange.targetPlanId;
+      const changeType = this.pendingPlanChange.changeType;
       this.pendingPlanChange = undefined;
       this.touch();
+
+      // 發佈方案變更事件
+      this.addDomainEvent(new SubscriptionPlanChanged(this.subscriptionId, oldPlanId, this.planId, changeType));
       return true;
     }
 

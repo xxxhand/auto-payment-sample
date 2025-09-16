@@ -3,6 +3,7 @@ import { PaymentStatus, PaymentFailureCategory, RefundStatus } from '../enums/co
 import { Money } from '../value-objects/money';
 import { PaymentStateMachine } from '../value-objects/state-machine';
 import { SubscriptionEntity } from './subscription.entity';
+import { PaymentSucceeded, PaymentFailed, PaymentRefunded } from '../events/payment.events';
 
 /**
  * 付款歷史記錄
@@ -150,6 +151,35 @@ export class PaymentEntity extends BaseEntity {
   }
 
   /**
+   * 靜態工廠：建立付款（文件風格）
+   */
+  static create(params: {
+    subscriptionId: string;
+    customerId: string;
+    paymentMethodId: string;
+    amount: Money | number;
+    currency?: string;
+    periodStart: Date;
+    periodEnd: Date;
+  }): PaymentEntity {
+    const amountNumber = params.amount instanceof Money ? params.amount.amount : params.amount;
+    const currency = params.amount instanceof Money ? params.amount.currency : params.currency || 'TWD';
+    const entity = new PaymentEntity(
+      params.subscriptionId,
+      params.customerId,
+      params.paymentMethodId,
+      amountNumber,
+      params.periodStart,
+      params.periodEnd,
+      currency,
+    );
+    if (params.amount instanceof Money) {
+      entity.setAmount(params.amount);
+    }
+    return entity;
+  }
+
+  /**
    * 獲取付款金額 Money 物件
    */
   getAmount(): Money {
@@ -218,6 +248,9 @@ export class PaymentEntity extends BaseEntity {
 
     // 清除重試狀態
     this.retryState = undefined;
+
+    // 發佈事件
+    this.addDomainEvent(new PaymentSucceeded(this.id, this.subscriptionId, this.getAmount()));
   }
 
   /**
@@ -231,6 +264,9 @@ export class PaymentEntity extends BaseEntity {
       failedAt: new Date(),
     };
     this.failedAt = new Date();
+
+    // 發佈事件
+    this.addDomainEvent(new PaymentFailed(this.id, this.subscriptionId, failureDetails.errorMessage || 'Unknown failure', failureDetails.category));
 
     // 如果需要重試，轉換為重試狀態
     if (shouldRetry && failureDetails.isRetriable) {
@@ -303,6 +339,11 @@ export class PaymentEntity extends BaseEntity {
       this.transitionTo(PaymentStatus.REFUNDED, `Full refund completed: ${refundDetails.refundId}`);
     } else if (totalRefunded.isPositive()) {
       this.transitionTo(PaymentStatus.PARTIALLY_REFUNDED, `Partial refund completed: ${refundDetails.refundId}`);
+    }
+
+    // 發佈退款事件（僅在成功退款時）
+    if (refundDetails.status === RefundStatus.SUCCEEDED) {
+      this.addDomainEvent(new PaymentRefunded(this.id, this.subscriptionId, refundDetails.refundId, refundDetails.refundAmount));
     }
   }
 
