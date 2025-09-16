@@ -24,8 +24,6 @@ describe('Mock Webhook Controller (e2e)', () => {
 
     const res = await agent.post('/webhooks/mock').send(payload).expect(200);
 
-    expect(res.body).toEqual(
-      expect.objectContaining({ ok: true, eventType: 'payment.succeeded', paymentId: 'pay_mock_123' })
-    );
+    expect(res.body).toEqual(expect.objectContaining({ ok: true, eventType: 'payment.succeeded', paymentId: 'pay_mock_123' }));
   });
 });
