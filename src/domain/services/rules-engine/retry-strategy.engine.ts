@@ -128,9 +128,7 @@ export class RetryStrategyEngine {
 
     // 獲取適用的重試規則並按優先級排序（只取當前時間有效的規則）
     const now = new Date();
-    const retryRules = this.ruleRegistry
-      .getValidRulesAtTime(RuleType.RETRY, now)
-      .sort((a, b) => b.priority - a.priority); // 高優先級先執行
+    const retryRules = this.ruleRegistry.getValidRulesAtTime(RuleType.RETRY, now).sort((a, b) => b.priority - a.priority); // 高優先級先執行
     const appliedRules: string[] = [];
 
     // 預設策略
@@ -341,17 +339,9 @@ export class RetryStrategyEngine {
         case RuleConditionOperator.NOT_IN:
           return Array.isArray(condition.value) && !condition.value.includes(fieldValue);
         case RuleConditionOperator.CONTAINS:
-          return Array.isArray(fieldValue)
-            ? fieldValue.includes(condition.value)
-            : typeof fieldValue === 'string'
-            ? fieldValue.includes(String(condition.value))
-            : false;
+          return Array.isArray(fieldValue) ? fieldValue.includes(condition.value) : typeof fieldValue === 'string' ? fieldValue.includes(String(condition.value)) : false;
         case RuleConditionOperator.NOT_CONTAINS:
-          return Array.isArray(fieldValue)
-            ? !fieldValue.includes(condition.value)
-            : typeof fieldValue === 'string'
-            ? !fieldValue.includes(String(condition.value))
-            : true;
+          return Array.isArray(fieldValue) ? !fieldValue.includes(condition.value) : typeof fieldValue === 'string' ? !fieldValue.includes(String(condition.value)) : true;
         case RuleConditionOperator.REGEX:
           try {
             const regex = new RegExp(condition.value);
