@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PaymentFailureCategory, RetryStrategyType } from '../../enums/codes.const';
-import { IRuleDefinition, IRuleExecutionContext, RuleType, RuleConditionOperator } from './interfaces/rules.interface';
+import { IRuleDefinition, IRuleExecutionContext, RuleType, RuleConditionOperator, IRuleCondition } from './interfaces/rules.interface';
 import { RuleRegistry } from './rule-registry.service';
 
 /**
@@ -126,8 +126,11 @@ export class RetryStrategyEngine {
       timestamp: new Date(),
     };
 
-    // 獲取適用的重試規則並按優先級排序
-    const retryRules = this.ruleRegistry.getEnabledRulesByType(RuleType.RETRY).sort((a, b) => b.priority - a.priority); // 高優先級先執行
+    // 獲取適用的重試規則並按優先級排序（只取當前時間有效的規則）
+    const now = new Date();
+    const retryRules = this.ruleRegistry
+      .getValidRulesAtTime(RuleType.RETRY, now)
+      .sort((a, b) => b.priority - a.priority); // 高優先級先執行
     const appliedRules: string[] = [];
 
     // 預設策略
@@ -316,7 +319,7 @@ export class RetryStrategyEngine {
   /**
    * 評估條件
    */
-  private evaluateConditions(conditions: any[], data: any): boolean {
+  private evaluateConditions(conditions: IRuleCondition[], data: any): boolean {
     return conditions.every((condition) => {
       const fieldValue = this.getNestedValue(data, condition.field);
 
@@ -329,10 +332,33 @@ export class RetryStrategyEngine {
           return fieldValue > condition.value;
         case RuleConditionOperator.LESS_THAN:
           return fieldValue < condition.value;
+        case RuleConditionOperator.GREATER_THAN_OR_EQUAL:
+          return fieldValue >= condition.value;
+        case RuleConditionOperator.LESS_THAN_OR_EQUAL:
+          return fieldValue <= condition.value;
         case RuleConditionOperator.IN:
           return Array.isArray(condition.value) && condition.value.includes(fieldValue);
         case RuleConditionOperator.NOT_IN:
           return Array.isArray(condition.value) && !condition.value.includes(fieldValue);
+        case RuleConditionOperator.CONTAINS:
+          return Array.isArray(fieldValue)
+            ? fieldValue.includes(condition.value)
+            : typeof fieldValue === 'string'
+            ? fieldValue.includes(String(condition.value))
+            : false;
+        case RuleConditionOperator.NOT_CONTAINS:
+          return Array.isArray(fieldValue)
+            ? !fieldValue.includes(condition.value)
+            : typeof fieldValue === 'string'
+            ? !fieldValue.includes(String(condition.value))
+            : true;
+        case RuleConditionOperator.REGEX:
+          try {
+            const regex = new RegExp(condition.value);
+            return typeof fieldValue === 'string' && regex.test(fieldValue);
+          } catch {
+            return false;
+          }
         default:
           return false;
       }

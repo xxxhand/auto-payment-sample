@@ -150,6 +150,12 @@ export interface IRuleRegistry {
    * 清空所有規則
    */
   clearRules(): void;
+
+  // 新增：獲取已啟用規則與在指定時間有效的規則，與 RuleRegistry 實作保持一致
+  /** 獲取指定類型的已啟用規則 */
+  getEnabledRulesByType(type: RuleType): IRuleDefinition[];
+  /** 獲取在指定時間有效的規則 */
+  getValidRulesAtTime(type: RuleType, timestamp: Date): IRuleDefinition[];
 }
 
 /**
