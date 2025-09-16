@@ -4,7 +4,7 @@ import { MockPaymentGateway } from '../src/domain/services/payment/mock-payment-
 import { PaymentStatus, PaymentMethodType, RefundStatus } from '../src/domain/interfaces/payment/payment-gateway.interface';
 
 // TODO: Not a very good mock way, the mock gateway should implement here, not in src, fix it in the future
-describe.skip('Payment Gateway Integration (e2e)', () => {
+describe('Payment Gateway Integration (e2e)', () => {
   let gatewayManager: PaymentGatewayManager;
   let mockGateway: MockPaymentGateway;
 
@@ -44,8 +44,8 @@ describe.skip('Payment Gateway Integration (e2e)', () => {
         paymentMethodId: 'pm_test_card',
         customerId: 'cus_test',
         description: 'Test payment',
-        metadata: { orderId: 'order_123' },
-      };
+        metadata: { orderId: 'order_123', __forceScenario: 'success' },
+      } as any;
 
       const result = await gatewayManager.processPayment('mock', paymentOptions);
 
@@ -132,7 +132,8 @@ describe.skip('Payment Gateway Integration (e2e)', () => {
         amount: 1000,
         currency: 'TWD',
         paymentMethodId: 'pm_test_card',
-      };
+        metadata: { __forceScenario: 'success' },
+      } as any;
 
       const result = await gatewayManager.processPayment('mock', paymentOptions);
       const gateway = gatewayManager.getGateway('mock');
@@ -150,17 +151,10 @@ describe.skip('Payment Gateway Integration (e2e)', () => {
         currency: 'TWD',
         paymentMethodId: 'pm_test_card',
         customerId: 'cus_test',
-      };
+        metadata: { __forceScenario: 'success' },
+      } as any;
 
-      let paymentResult;
-      let attempts = 0;
-
-      // 重試直到獲得成功的支付 (最多 5 次)
-      do {
-        paymentResult = await gatewayManager.processPayment('mock', paymentOptions);
-        attempts++;
-      } while (!paymentResult.success && attempts < 5);
-
+      const paymentResult = await gatewayManager.processPayment('mock', paymentOptions);
       expect(paymentResult.success).toBe(true);
 
       // 創建退款
@@ -183,7 +177,8 @@ describe.skip('Payment Gateway Integration (e2e)', () => {
         amount: 1000,
         currency: 'TWD',
         paymentMethodId: 'pm_test_card',
-      };
+        metadata: { __forceScenario: 'success' },
+      } as any;
 
       const paymentResult = await gatewayManager.processPayment('mock', paymentOptions);
       const refundAmount = 500;

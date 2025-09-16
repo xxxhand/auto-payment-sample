@@ -39,7 +39,45 @@ export class MockPaymentGateway implements IPaymentGateway {
     await this.simulateProcessingDelay();
 
     const paymentId = this.generateId('pay');
-    const simulationResult = this.simulatePaymentScenario(options);
+
+    // 允許以 metadata.__forceScenario 強制指定測試情境，避免測試隨機性
+    const forced = options.metadata?.__forceScenario as 'success' | 'failed' | 'requires_action' | 'processing' | undefined;
+
+    let simulationResult: ReturnType<MockPaymentGateway['simulatePaymentScenario']>;
+
+    if (forced === 'success') {
+      simulationResult = {
+        success: true,
+        status: PaymentStatus.SUCCEEDED,
+        scenario: 'forced_success',
+      } as any;
+    } else if (forced === 'failed') {
+      simulationResult = {
+        success: false,
+        status: PaymentStatus.FAILED,
+        scenario: 'forced_failure',
+        errorMessage: 'Forced failure',
+        errorCode: 'FORCED_FAILURE',
+      } as any;
+    } else if (forced === 'requires_action') {
+      simulationResult = {
+        success: true,
+        status: PaymentStatus.REQUIRES_ACTION,
+        scenario: 'forced_requires_action',
+        nextAction: {
+          type: '3d_secure',
+          redirectUrl: 'https://mock-3ds.example.com/authenticate',
+        },
+      } as any;
+    } else if (forced === 'processing') {
+      simulationResult = {
+        success: true,
+        status: PaymentStatus.PROCESSING,
+        scenario: 'forced_processing',
+      } as any;
+    } else {
+      simulationResult = this.simulatePaymentScenario(options);
+    }
 
     const paymentData = {
       id: paymentId,
@@ -63,7 +101,7 @@ export class MockPaymentGateway implements IPaymentGateway {
       amount: options.amount,
       currency: options.currency,
       clientSecret: simulationResult.status === PaymentStatus.REQUIRES_ACTION ? this.generateClientSecret(paymentId) : undefined,
-      nextAction: simulationResult.nextAction,
+      nextAction: (simulationResult as any).nextAction,
       gatewayResponse: {
         mockPayment: paymentData,
         simulationScenario: simulationResult.scenario,
@@ -176,8 +214,18 @@ export class MockPaymentGateway implements IPaymentGateway {
     const refundId = this.generateId('ref');
     const refundAmount = options?.amount || payment.amount;
 
-    // 95% 機率退款成功
-    const success = Math.random() > 0.05;
+    // 允許以 metadata.__forceRefund 強制指定退款情境
+    const forcedRefund = options?.metadata?.__forceRefund as 'success' | 'failed' | undefined;
+
+    let success: boolean;
+    if (forcedRefund === 'success') {
+      success = true;
+    } else if (forcedRefund === 'failed') {
+      success = false;
+    } else {
+      // 95% 機率退款成功
+      success = Math.random() > 0.05;
+    }
     const status = success ? RefundStatus.SUCCEEDED : RefundStatus.FAILED;
 
     const refundData = {
