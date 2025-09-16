@@ -13,6 +13,7 @@ import { AccountController } from './controllers/account.controller';
 import { ECPayWebhookController } from './controllers/ecpay-webhook.controller';
 import { HealthController } from './controllers/health.controller';
 import { DebugController } from './controllers/debug.controller';
+import { MockWebhookController } from './controllers/mock-webhook.controller';
 import { ExampleRepository } from './infra/repositories/example.repository';
 import { CustomerRepository } from './infra/repositories/customer.repository';
 import { SubscriptionRepository } from './infra/repositories/subscription.repository';
@@ -53,6 +54,7 @@ import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
     ECPayWebhookController,
     HealthController,
     DebugController,
+    MockWebhookController,
   ],
   providers: [
     AppService,
