@@ -1,8 +1,10 @@
 # 領域模型設計 (Domain Model Design)
 
+[ER 圖預覽（資料庫核心集合關係圖）](../database/schema-design.md#2-核心集合關係圖)
+
 ## 1. 領域概述
 
-根據需求分析，自動扣款系統涉及五個核心業務領域：**訂閱管理**、**產品管理**、**優惠管理**、**支付處理**、**帳戶管理**。每個領域都有其特定的業務規則和資料結構。
+根據需求分析，自動扣款系統涉及五個核心業務領域：**訂閱管理**、**產品管理**、**優惠管理**、**支付處理**、**客戶管理**。每個領域都有其特定的業務規則和資料結構。
 
 ## 2. 領域上下文地圖 (Domain Context Map)
 
@@ -18,7 +20,7 @@ graph TB
         PLAN[方案聚合<br/>Plan Aggregate]
     end
     
-    subgraph "優惠上下文 (Promotion Context)"
+    subgraph "優惠上下文 (Promotion Context, Roadmap)"
         PROMO[優惠聚合<br/>Promotion Aggregate]
         COUPON[優惠碼聚合<br/>Coupon Aggregate]
     end
@@ -28,8 +30,8 @@ graph TB
         RETRY[重試聚合<br/>Retry Aggregate]
     end
     
-    subgraph "帳戶上下文 (Account Context)"
-        ACC[帳戶聚合<br/>Account Aggregate]
+    subgraph "客戶上下文 (Customer Context)"
+        CUST[客戶聚合<br/>Customer Aggregate]
         REFUND[退款聚合<br/>Refund Aggregate]
     end
     
@@ -40,9 +42,9 @@ graph TB
     PLAN --> PROD
     COUPON --> PROMO
     RETRY --> PAY
-    REFUND --> ACC
+    REFUND --> CUST
     
-    PAY -.-> ACC
+    PAY -.-> CUST
     PROMO -.-> PROD
 ```
 
@@ -59,7 +61,7 @@ graph TB
 class Subscription {
   private constructor(
     private readonly id: SubscriptionId,
-    private accountId: AccountId,
+    private customerId: CustomerId,
     private productId: ProductId,
     private planId: PlanId,
     private status: SubscriptionStatus,
@@ -189,6 +191,8 @@ class PromotionRules {
 - `PromotionEngine`: 優惠計算引擎（部分功能尚未實現）。
 - `PromotionPriorityResolver`: 優惠優先級解析服務（需補充實現）。
 
+> 備註：優惠（Promotion/Coupon）為 Roadmap，尚未於程式碼實作。
+
 ### 3.4 支付聚合 (Payment Aggregate)
 
 **聚合根**: `Payment`
@@ -237,23 +241,23 @@ class PaymentAttempt {
 - `PaymentFailureClassifier`: 支付失敗分類服務
 - `RetryScheduler`: 重試排程服務
 
-### 3.5 帳戶聚合 (Account Aggregate)
+### 3.5 客戶聚合 (Customer Aggregate)
 
-**聚合根**: `Account`
+**聚合根**: `Customer`
 
-**職責**: 管理用戶帳戶資訊、支付方式、退款等。
+**職責**: 管理客戶資訊、支付方式、退款等。
 
 ```typescript
-class Account {
+class Customer {
   private constructor(
-    private readonly id: AccountId,
-    private profile: AccountProfile,
+    private readonly id: CustomerId,
+    private profile: CustomerProfile,
     private paymentMethods: PaymentMethod[],
     private subscriptions: SubscriptionId[],
-    private status: AccountStatus
+    private status: CustomerStatus
   ) {}
   
-  static create(params: CreateAccountParams): Account
+  static create(params: CreateCustomerParams): Customer
   
   addPaymentMethod(paymentMethod: PaymentMethod): void
   removePaymentMethod(paymentMethodId: PaymentMethodId): void
@@ -266,7 +270,7 @@ class Account {
 class Refund {
   constructor(
     private readonly id: RefundId,
-    private accountId: AccountId,
+    private customerId: CustomerId,
     private originalPaymentId: PaymentId,
     private amount: Money,
     private reason: RefundReason,
@@ -279,6 +283,8 @@ class Refund {
 }
 ```
 
+> 備註：退款（Refund）為 Roadmap，尚未於程式碼實作。
+
 ## 4. 領域事件設計
 
 ### 4.1 訂閱相關事件
@@ -287,7 +293,7 @@ class Refund {
 class SubscriptionCreated extends DomainEvent {
   constructor(
     public readonly subscriptionId: SubscriptionId,
-    public readonly accountId: AccountId,
+    public readonly customerId: CustomerId,
     public readonly productId: ProductId,
     public readonly planId: PlanId
   ) { super(); }
@@ -388,7 +394,7 @@ class RuleBasedPromotionEngine implements PromotionEngine {
 interface SubscriptionRepository {
   save(subscription: Subscription): Promise<void>;
   findById(id: SubscriptionId): Promise<Subscription | null>;
-  findByAccountId(accountId: AccountId): Promise<Subscription[]>;
+  findByCustomerId(customerId: CustomerId): Promise<Subscription[]>;
   findDueForBilling(date: Date): Promise<Subscription[]>;
 }
 
@@ -436,3 +442,5 @@ interface PromotionRepository {
 - 所有狀態轉換都有明確的觸發條件
 
 這個領域模型設計為系統提供了清晰的業務概念和結構，為後續的實現提供了堅實的基礎。
+
+> 整體命名已與資料庫模型對齊：使用 Customer 取代 Account；優惠與退款為 Roadmap。
