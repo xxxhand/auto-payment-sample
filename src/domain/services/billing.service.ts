@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { SubscriptionEntity } from '../entities';
 import { PaymentEntity } from '../entities';
 import { SubscriptionRepository } from '../../infra/repositories/subscription.repository';
@@ -19,7 +19,7 @@ import { PaymentFailureCategory, SubscriptionStatus } from '../enums/codes.const
 export class BillingService {
   constructor(
     private readonly subscriptionRepository: SubscriptionRepository,
-    private readonly paymentService: PaymentService,
+    @Inject(forwardRef(() => PaymentService)) private readonly paymentService: PaymentService,
     private readonly subscriptionService: SubscriptionService,
     private readonly billingRulesEngine: BillingRulesEngine,
     private readonly retryStrategyEngine: RetryStrategyEngine,

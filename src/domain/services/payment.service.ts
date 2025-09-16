@@ -1,4 +1,4 @@
-import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import { Inject, Injectable, forwardRef, Optional } from '@nestjs/common';
 import { PaymentEntity, PaymentStatus, PaymentFailureCategory } from '../entities';
 import { PaymentRepository } from '../../infra/repositories/payment.repository';
 import { SubscriptionRepository } from '../../infra/repositories/subscription.repository';
@@ -8,6 +8,7 @@ import { PaymentProcessingService } from './payment-processing.service';
 import { Money } from '../value-objects/money';
 import { mapFailureCategoryFromMessage, isCategoryRetriable } from '../utils/payment-failure.util';
 import { RetryPolicy } from '../value-objects/retry-policy';
+import { BillingService } from './billing.service';
 
 export interface PaymentAttempt {
   id: string;
@@ -57,6 +58,7 @@ export class PaymentService {
     private readonly subscriptionRepository: SubscriptionRepository,
     private readonly retryStrategyEngine: RetryStrategyEngine,
     @Inject(forwardRef(() => PaymentProcessingService)) private readonly paymentProcessingService: PaymentProcessingService,
+    @Optional() @Inject(forwardRef(() => BillingService)) private readonly billingService?: BillingService,
   ) {}
 
   /**
@@ -135,7 +137,19 @@ export class PaymentService {
     }
 
     payment.markSucceeded(externalTransactionId);
-    return await this.paymentRepository.save(payment);
+    const saved = await this.paymentRepository.save(payment);
+
+    // 同步更新訂閱狀態
+    try {
+      if (this.billingService) {
+        await this.billingService.handlePaymentSuccess(paymentId);
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to handle subscription after payment success:', e);
+    }
+
+    return saved;
   }
 
   /**
@@ -148,7 +162,19 @@ export class PaymentService {
     }
 
     payment.markFailed(failureReason, failureCode);
-    return await this.paymentRepository.save(payment);
+    const saved = await this.paymentRepository.save(payment);
+
+    // 同步更新訂閱重試/寬限狀態
+    try {
+      if (this.billingService) {
+        await this.billingService.handlePaymentFailure(paymentId);
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to handle subscription after payment failure:', e);
+    }
+
+    return saved;
   }
 
   /**
