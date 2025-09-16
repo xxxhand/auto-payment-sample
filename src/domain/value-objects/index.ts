@@ -3,3 +3,4 @@ export * from './billing-cycle';
 export * from './state-machine';
 export * from './payment-method';
 export * from './notification';
+export * from './retry-policy';

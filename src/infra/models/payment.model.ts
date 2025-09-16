@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { IBaseModel } from './base-model.interface';
-import { PaymentStatus } from '../../domain/enums/codes.const';
+import { PaymentStatus, PaymentFailureCategory } from '../../domain/enums/codes.const';
 
 /**
  * 支付記錄資料模型
@@ -72,13 +72,17 @@ export interface IPaymentModel extends IBaseModel {
   /** 支付元資料 */
   metadata: Record<string, any>;
 
+  /** 第三方支付的支付/扣款ID（擴充） */
+  providerPaymentId?: string;
+  providerChargeId?: string;
+
   /** 失敗詳情（擴充） */
   failureDetails?: {
     errorCode?: string;
     errorMessage?: string;
     providerErrorCode?: string;
     providerErrorMessage?: string;
-    category: number; // PaymentFailureCategory
+    category: PaymentFailureCategory; // 原註解: number
     isRetriable: boolean;
     failedAt: Date;
     metadata?: Record<string, any>;
@@ -90,7 +94,7 @@ export interface IPaymentModel extends IBaseModel {
     maxRetries: number;
     nextRetryAt?: Date;
     lastFailureReason?: string;
-    failureCategory?: number; // PaymentFailureCategory
+    failureCategory?: PaymentFailureCategory; // 原註解: number
     retryStrategy: string;
   };
 }

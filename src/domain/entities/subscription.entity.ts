@@ -195,22 +195,8 @@ export class SubscriptionEntity extends BaseEntity {
   /**
    * 靜態工廠：建立訂閱（文件風格）
    */
-  static create(params: {
-    customerId: string;
-    productId: string;
-    planId: string;
-    paymentMethodId: string;
-    baseAmount: Money;
-    billingCycle: BillingCycleVO;
-  }): SubscriptionEntity {
-    const entity = new SubscriptionEntity(
-      params.customerId,
-      params.productId,
-      params.planId,
-      params.paymentMethodId,
-      params.baseAmount,
-      params.billingCycle,
-    );
+  static create(params: { customerId: string; productId: string; planId: string; paymentMethodId: string; baseAmount: Money; billingCycle: BillingCycleVO }): SubscriptionEntity {
+    const entity = new SubscriptionEntity(params.customerId, params.productId, params.planId, params.paymentMethodId, params.baseAmount, params.billingCycle);
     // 已於建構子內發出 SubscriptionCreated 事件
     return entity;
   }

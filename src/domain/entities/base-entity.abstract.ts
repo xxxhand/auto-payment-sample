@@ -4,7 +4,7 @@ export abstract class BaseEntity {
   public id: string = '';
   public createdAt: Date = new Date();
   public updatedAt: Date = new Date();
-  
+
   // 領域事件暫存
   private _domainEvents: DomainEvent[] = [];
 

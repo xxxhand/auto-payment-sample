@@ -4,6 +4,7 @@ import { Money } from '../value-objects/money';
 import { PaymentStateMachine } from '../value-objects/state-machine';
 import { SubscriptionEntity } from './subscription.entity';
 import { PaymentSucceeded, PaymentFailed, PaymentRefunded } from '../events/payment.events';
+import { RetryPolicy } from '../value-objects/retry-policy';
 
 /**
  * 付款歷史記錄
@@ -164,15 +165,7 @@ export class PaymentEntity extends BaseEntity {
   }): PaymentEntity {
     const amountNumber = params.amount instanceof Money ? params.amount.amount : params.amount;
     const currency = params.amount instanceof Money ? params.amount.currency : params.currency || 'TWD';
-    const entity = new PaymentEntity(
-      params.subscriptionId,
-      params.customerId,
-      params.paymentMethodId,
-      amountNumber,
-      params.periodStart,
-      params.periodEnd,
-      currency,
-    );
+    const entity = new PaymentEntity(params.subscriptionId, params.customerId, params.paymentMethodId, amountNumber, params.periodStart, params.periodEnd, currency);
     if (params.amount instanceof Money) {
       entity.setAmount(params.amount);
     }
@@ -474,54 +467,26 @@ export class PaymentEntity extends BaseEntity {
    * 根據失敗類型獲取最大重試次數
    */
   private getMaxRetriesForCategory(category: PaymentFailureCategory): number {
-    switch (category) {
-      case PaymentFailureCategory.RETRIABLE:
-        return 5;
-      case PaymentFailureCategory.DELAYED_RETRY:
-        return 3;
-      case PaymentFailureCategory.NON_RETRIABLE:
-        return 0;
-      default:
-        return 3;
-    }
+    const policy = RetryPolicy.forCategory(category);
+    return policy.config.maxRetries;
   }
 
   /**
    * 根據失敗類型獲取重試策略
    */
   private getRetryStrategyForCategory(category: PaymentFailureCategory): string {
-    switch (category) {
-      case PaymentFailureCategory.RETRIABLE:
-        return 'exponential_backoff';
-      case PaymentFailureCategory.DELAYED_RETRY:
-        return 'fixed_interval';
-      default:
-        return 'linear';
-    }
+    const policy = RetryPolicy.forCategory(category);
+    return String(policy.config.strategy);
   }
 
   /**
    * 計算下次重試時間
    */
   private calculateNextRetryTime(attemptNumber: number, category: PaymentFailureCategory): Date {
-    const now = new Date();
-    let delayMinutes: number;
-
-    switch (category) {
-      case PaymentFailureCategory.RETRIABLE:
-        // 指數退避：5, 10, 20, 40, 60 分鐘
-        delayMinutes = Math.min(5 * Math.pow(2, attemptNumber - 1), 60);
-        break;
-      case PaymentFailureCategory.DELAYED_RETRY:
-        // 固定延遲：24小時
-        delayMinutes = 1440;
-        break;
-      default:
-        // 線性增長：30, 60, 90 分鐘
-        delayMinutes = 30 * attemptNumber;
-    }
-
-    return new Date(now.getTime() + delayMinutes * 60 * 1000);
+    const policy = RetryPolicy.forCategory(category);
+    const next = policy.nextRetryAt(attemptNumber);
+    // 若策略不支援重試，回傳當前時間（表示應立即由上層判斷不重試）
+    return next ?? new Date();
   }
 
   /**

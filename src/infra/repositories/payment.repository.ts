@@ -46,6 +46,8 @@ export class PaymentRepository {
         invoiceNumber: entity.invoiceNumber,
         receiptNumber: entity.receiptNumber,
         metadata: entity.metadata,
+        providerPaymentId: entity.providerPaymentId,
+        providerChargeId: entity.providerChargeId,
         failureDetails: entity.failureDetails
           ? {
               errorCode: entity.failureDetails.errorCode,
@@ -101,6 +103,8 @@ export class PaymentRepository {
           invoiceNumber: entity.invoiceNumber,
           receiptNumber: entity.receiptNumber,
           metadata: entity.metadata,
+          providerPaymentId: entity.providerPaymentId,
+          providerChargeId: entity.providerChargeId,
           failureDetails: entity.failureDetails
             ? {
                 errorCode: entity.failureDetails.errorCode,
@@ -333,6 +337,8 @@ export class PaymentRepository {
       invoiceNumber: doc.invoiceNumber,
       receiptNumber: doc.receiptNumber,
       metadata: doc.metadata,
+      providerPaymentId: doc.providerPaymentId,
+      providerChargeId: doc.providerChargeId,
       failureDetails: doc.failureDetails
         ? {
             errorCode: doc.failureDetails.errorCode,

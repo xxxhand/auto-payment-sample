@@ -7,6 +7,7 @@ import { RetryStrategyEngine } from './rules-engine/retry-strategy.engine';
 import { PaymentProcessingService } from './payment-processing.service';
 import { Money } from '../value-objects/money';
 import { mapFailureCategoryFromMessage, isCategoryRetriable } from '../utils/payment-failure.util';
+import { RetryPolicy } from '../value-objects/retry-policy';
 
 export interface PaymentAttempt {
   id: string;
@@ -362,6 +363,9 @@ export class PaymentService {
           currency,
         });
 
+        // 後備策略（若規則未提供數值）
+        const fallbackPolicy = RetryPolicy.forCategory(failureCategory);
+
         // 同步重試決策到 PaymentEntity.retryState 與 failureDetails（便於外部觀察與後續排程）
         try {
           const p = await this.paymentRepository.findById(paymentId);
@@ -375,16 +379,15 @@ export class PaymentService {
             };
             p.retryState = {
               attemptNumber: attempts,
-              maxRetries: decision.maxRetries ?? this.maxRetryAttempts,
-              nextRetryAt: decision.nextRetryDate,
+              maxRetries: decision.maxRetries ?? fallbackPolicy.config.maxRetries,
+              nextRetryAt: decision.nextRetryDate ?? fallbackPolicy.nextRetryAt(attempts),
               lastFailureReason: lastError,
               failureCategory,
-              retryStrategy: String(decision.retryStrategy || 'UNKNOWN'),
+              retryStrategy: String(decision.retryStrategy || fallbackPolicy.config.strategy || 'UNKNOWN'),
             };
             await this.paymentRepository.save(p);
           }
         } catch (e) {
-          // 若儲存失敗，不阻斷流程；記錄但不拋出
           // eslint-disable-next-line no-console
           console.warn('Failed to persist payment retryState after failure:', e);
         }
@@ -409,14 +412,16 @@ export class PaymentService {
           return { success: false, paymentId, attempts, finalError: lastError };
         }
 
-        // 需要重試：依決策延遲。為了測試速度，限制最長延遲 100ms。
-        const delayMs = Math.min((decision.delayMinutes || 0) * 60 * 1000, process.env.JEST_WORKER_ID ? 100 : 60_000);
+        // 需要重試：依決策延遲（使用策略後備）
+        const delayMinutes = decision.delayMinutes ?? fallbackPolicy.calculateDelayMinutes(attempts);
+        const delayMs = Math.min(delayMinutes * 60 * 1000, process.env.JEST_WORKER_ID ? 100 : 60_000);
         if (delayMs > 0) {
           await this.delay(delayMs);
         }
 
-        // 繼續下一次嘗試，但也施加一個硬上限避免無限迴圈
-        if (attempts >= (decision.maxRetries || this.maxRetryAttempts)) {
+        // 硬上限：使用決策或策略後備
+        const maxRetries = decision.maxRetries ?? fallbackPolicy.config.maxRetries ?? this.maxRetryAttempts;
+        if (attempts >= maxRetries) {
           const p = await this.paymentRepository.findById(paymentId);
           if (p) {
             p.markAsFailed(
@@ -446,10 +451,11 @@ export class PaymentService {
         }
 
         // 將此處處理錯誤也走引擎：用 DELAYED_RETRY 作為保守類別
+        const failureCategory = PaymentFailureCategory.DELAYED_RETRY;
         const decision = await this.retryStrategyEngine.evaluateRetryDecision({
           paymentId,
           subscriptionId,
-          failureCategory: PaymentFailureCategory.DELAYED_RETRY,
+          failureCategory,
           failureReason: errorMessage,
           attemptNumber: attempts,
           lastAttemptDate: new Date(),
@@ -457,6 +463,7 @@ export class PaymentService {
           paymentAmount: amount,
           currency,
         });
+        const fallbackPolicy = RetryPolicy.forCategory(failureCategory);
 
         // 同步決策至 PaymentEntity.retryState 以供觀察
         try {
@@ -465,17 +472,17 @@ export class PaymentService {
             p.failureDetails = {
               errorCode: 'PROCESSING_ERROR',
               errorMessage: errorMessage,
-              category: PaymentFailureCategory.DELAYED_RETRY,
+              category: failureCategory,
               isRetriable: true,
               failedAt: new Date(),
             };
             p.retryState = {
               attemptNumber: attempts,
-              maxRetries: decision.maxRetries ?? this.maxRetryAttempts,
-              nextRetryAt: decision.nextRetryDate,
+              maxRetries: decision.maxRetries ?? fallbackPolicy.config.maxRetries,
+              nextRetryAt: decision.nextRetryDate ?? fallbackPolicy.nextRetryAt(attempts),
               lastFailureReason: errorMessage,
-              failureCategory: PaymentFailureCategory.DELAYED_RETRY,
-              retryStrategy: String(decision.retryStrategy || 'UNKNOWN'),
+              failureCategory,
+              retryStrategy: String(decision.retryStrategy || fallbackPolicy.config.strategy || 'UNKNOWN'),
             };
             await this.paymentRepository.save(p);
           }
@@ -491,7 +498,7 @@ export class PaymentService {
               {
                 errorCode: 'PROCESSING_ERROR',
                 errorMessage: lastError,
-                category: PaymentFailureCategory.DELAYED_RETRY,
+                category: failureCategory,
                 isRetriable: true,
               },
               false,
@@ -503,19 +510,21 @@ export class PaymentService {
           return { success: false, paymentId, attempts, finalError: lastError };
         }
 
-        const delayMs = Math.min((decision.delayMinutes || 0) * 60 * 1000, process.env.JEST_WORKER_ID ? 100 : 60_000);
+        const delayMinutes = decision.delayMinutes ?? fallbackPolicy.calculateDelayMinutes(attempts);
+        const delayMs = Math.min(delayMinutes * 60 * 1000, process.env.JEST_WORKER_ID ? 100 : 60_000);
         if (delayMs > 0) {
           await this.delay(delayMs);
         }
 
-        if (attempts >= (decision.maxRetries || this.maxRetryAttempts)) {
+        const maxRetries = decision.maxRetries ?? fallbackPolicy.config.maxRetries ?? this.maxRetryAttempts;
+        if (attempts >= maxRetries) {
           const p = await this.paymentRepository.findById(paymentId);
           if (p) {
             p.markAsFailed(
               {
                 errorCode: 'PROCESSING_ERROR',
                 errorMessage: lastError,
-                category: PaymentFailureCategory.DELAYED_RETRY,
+                category: failureCategory,
                 isRetriable: true,
               },
               false,
