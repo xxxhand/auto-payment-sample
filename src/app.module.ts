@@ -28,6 +28,7 @@ import { ProductService } from './domain/services/product.service';
 import { PromotionService } from './domain/services/promotion.service';
 import { RefundService } from './domain/services/refund.service';
 import { AccountService } from './domain/services/account.service';
+import { BillingService } from './domain/services/billing.service';
 // Application Services
 import { ProductApplicationService } from './application/product.application.service';
 import { SubscriptionApplicationService } from './application/subscription.application.service';
@@ -71,6 +72,7 @@ import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
     CustomerService,
     SubscriptionService,
     PaymentService,
+    BillingService,
     PaymentProcessingService,
     ProductService,
     PromotionService,
