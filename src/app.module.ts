@@ -40,6 +40,7 @@ import { BusinessRulesEngineModule } from './domain/services/rules-engine/busine
 import { PaymentMethodRepository } from './infra/repositories/payment-method.repository';
 import { AppExceptionFilter } from './app-components/app-exception.filter';
 import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
+import { PromotionEngine } from './domain/services/promotion-engine.service';
 @Module({
   imports: [CommonModule, PaymentModule, DateCalculationModule, BusinessRulesEngineModule],
   controllers: [
@@ -78,6 +79,7 @@ import { AppTracerMiddleware } from './app-components/app-tracer.middleware';
     PaymentProcessingService,
     ProductService,
     PromotionService,
+    PromotionEngine,
     RefundService,
     AccountService,
     // Application Services

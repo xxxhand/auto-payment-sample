@@ -121,7 +121,10 @@ describe('訂閱創建 - 優惠碼應用', () => {
     expect(result.firstPayment.originalAmount).toBe(299);
     expect(result.firstPayment.actualAmount).toBe(209); // 299 * 0.7
     expect(result.firstPayment.discountAmount).toBe(90);
-    expect(result.subscription.appliedPromotions).toContain('FIRST30OFF');
+    expect(result.subscription.appliedPromotion?.code).toBe('FIRST30OFF');
+    expect(result.subscription.appliedPromotion?.discount).toEqual(
+      expect.objectContaining({ type: 'PERCENTAGE', value: 30 })
+    );
   });
 });
 ```
@@ -283,6 +286,81 @@ describe('方案升級', () => {
   });
 });
 ```
+
+### 2.5 優惠管理測試 (Promotions)
+
+#### TC-PROM-001: 驗證優惠碼成功
+- 前置條件：有效期間、符合產品/方案、符合客戶資格、未超過使用上限
+- 步驟：POST /api/v1/promotions/validate with { promotionCode, productId, planId }
+- 驗收：
+  - [ ] result.isValid = true，reasons = []
+  - [ ] promotion 欄位包含 id/code/name/priority/type
+  - [ ] discount 物件包含 type/value/(currency|maxCycles 視情況)
+  - [ ] validPeriod.startAt/endAt 存在
+  - [ ] usage.remainingForCustomer >= 0
+
+#### TC-PROM-002: 無效優惠碼
+- 步驟：POST /validate with 不存在的 promotionCode
+- 驗收：
+  - [ ] HTTP 422
+  - [ ] code = 4531 (PROMOTION_CODE_INVALID)
+
+#### TC-PROM-003: 已過期的優惠碼
+- 步驟：POST /validate with 過期 promotionCode
+- 驗收：
+  - [ ] HTTP 422
+  - [ ] code = 4533 (PROMOTION_EXPIRED)
+
+#### TC-PROM-004: 客戶不符合資格
+- 範例：限新客，老客申請
+- 驗收：
+  - [ ] HTTP 422
+  - [ ] code = 4534 (PROMOTION_NOT_ELIGIBLE)
+
+#### TC-PROM-005: 不適用於該方案
+- 範例：優惠僅支援特定 planId
+- 驗收：
+  - [ ] HTTP 422
+  - [ ] code = 4535 (PROMOTION_NOT_APPLICABLE_TO_PLAN)
+
+#### TC-PROM-006: 已使用過的優惠碼
+- 範例：每客一次，用戶第二次使用
+- 驗收：
+  - [ ] HTTP 422
+  - [ ] code = 4532 (PROMOTION_ALREADY_USED)
+
+#### TC-PROM-007: 免月數 (FREE_CYCLES) 優惠應用
+- 前置：discount = { type: 'FREE_CYCLES', value: null, maxCycles: 1 }
+- 步驟：創建訂閱帶 promotionCode
+- 驗收：
+  - [ ] 本期 firstPayment.finalAmount = 0
+  - [ ] appliedPromotion.cyclesRemaining = 0 或按規則遞減
+
+#### TC-PROM-008: 查詢可用優惠並排序
+- 步驟：GET /promotions/available?productId=...&planId=...&includeIneligible=false
+- 驗收：
+  - [ ] 僅返回 isValid=true 的項目
+  - [ ] 按 priority desc → 節省金額 desc → id 升冪排序
+  - [ ] 項目包含 promotion/discount/validPeriod/usage 欄位
+- 變體：includeIneligible=true，驗收包含 isValid=false 與 reasons
+
+#### TC-PROM-009: 不允許疊加 (Stacking)
+- 步驟：創建訂閱指定 A 與 B 兩個可用優惠
+- 驗收：
+  - [ ] 僅套用一個最佳優惠（依排序規則選擇）
+  - [ ] 回應中僅有 appliedPromotion（單一物件）
+
+#### TC-PROM-010: 向後相容欄位
+- 步驟：/promotions/validate 傳 code 與 promotionCode 其一
+- 驗收：
+  - [ ] 兩者皆可被接受；建議回應中回傳 promotion.code
+
+#### TC-PROM-011: 訂閱創建端對端（含優惠）
+- 步驟：POST /subscriptions 帶 promotionCode
+- 驗收：
+  - [ ] result.appliedPromotion 與 Promotions API 格式一致
+  - [ ] pricing.baseAmount/discountAmount/finalAmount 正確
+  - [ ] 當優惠失效時，回應對應錯誤碼（見上）
 
 ## 3. 效能測試案例
 

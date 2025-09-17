@@ -216,6 +216,25 @@ export type ISubscriptionDocument = WithId<ISubscriptionModel>;
 - 支援分頁與限制結果數量
 - 聚合查詢支援統計分析
 
+## ➕ 新增：Promotion Engine（Phase 1 文件與骨架）
+
+- 文件
+  - docs/architecture/promotion-engine.md（Engine 職責/流程/決策規則/併發冪等）
+  - docs/architecture/promotion-data-model.md（資料模型對齊）
+  - docs/api/promotions-api.md（API 契約）
+  - docs/architecture/adr/2025-09-16-promotion-architecture.md（關鍵決策）
+- 程式碼（骨架）
+  - src/domain/enums/promotion.enums.ts
+  - src/domain/value-objects/promotion.model.ts
+  - src/domain/services/promotion-engine.service.ts（validate/list/select/apply 介面）
+  - app.module.ts 已註冊 PromotionEngine 提供者
+- API 文件對齊
+  - docs/api/subscription-api.md：創建訂閱支援 promotionCode、回應 appliedPromotion 結構統一
+- 後續（Phase 2）
+  - 補完 Repository 與 Eligibility/Calculator 策略
+  - 交易與 Idempotency，控制器改為呼叫 Engine
+  - 單元與整合測試
+
 ## 🔄 下一步：Phase 2 準備
 
 Phase 1 已建立完整的領域模型基礎，下一階段可以開始：

@@ -68,8 +68,8 @@ Authorization: Bearer <token>
   "productId": "64f5c8e5a1b2c3d4e5f67890",
   "planId": "64f5c8e5a1b2c3d4e5f67891",
   "paymentMethodId": "64f5c8e5a1b2c3d4e5f67892",
-  "promotionCode": "WELCOME2024",
-  "startDate": "2024-01-01T00:00:00Z",
+  "promotionCode": "WELCOME2025",
+  "startDate": "2025-01-01T00:00:00Z",
   "billingAddress": {
     "country": "TW",
     "city": "Taipei",
@@ -90,9 +90,9 @@ Authorization: Bearer <token>
     "productId": "64f5c8e5a1b2c3d4e5f67890",
     "planId": "64f5c8e5a1b2c3d4e5f67891",
     "currentPeriod": {
-      "startDate": "2024-01-01T00:00:00Z",
-      "endDate": "2024-02-01T00:00:00Z",
-      "nextBillingDate": "2024-02-01T00:00:00Z"
+      "startDate": "2025-01-01T00:00:00Z",
+      "endDate": "2025-02-01T00:00:00Z",
+      "nextBillingDate": "2025-02-01T00:00:00Z"
     },
     "pricing": {
       "baseAmount": 999,
@@ -100,14 +100,13 @@ Authorization: Bearer <token>
       "finalAmount": 899,
       "currency": "TWD"
     },
-    "appliedPromotions": [
-      {
-        "promotionId": "64f5c8e5a1b2c3d4e5f67893",
-        "promotionCode": "WELCOME2024",
-        "discountAmount": 100
-      }
-    ],
-    "createdAt": "2024-01-01T00:00:00Z"
+    "appliedPromotion": {
+      "promotionId": "prom_123",
+      "code": "WELCOME2025",
+      "discount": { "type": "FIXED_AMOUNT", "value": 100, "currency": "TWD", "maxCycles": 1 },
+      "cyclesRemaining": 1
+    },
+    "createdAt": "2025-01-01T00:00:00Z"
   }
 }
 ```
@@ -409,7 +408,7 @@ Content-Type: application/json
 Authorization: Bearer <token>
 
 {
-  "promotionCode": "WELCOME2024",
+  "promotionCode": "WELCOME2025",
   "productId": "64f5c8e5a1b2c3d4e5f67890",
   "planId": "64f5c8e5a1b2c3d4e5f67891"
 }
@@ -422,22 +421,28 @@ Authorization: Bearer <token>
   "code": 200,
   "message": "Promotion code validated successfully",
   "result": {
-    "promotionId": "64f5c8e5a1b2c3d4e5f67893",
-    "promotionCode": "WELCOME2024",
-    "promotionName": "新用戶歡迎優惠",
     "isValid": true,
+    "reasons": [],
+    "promotion": {
+      "id": "prom_123",
+      "code": "WELCOME2025",
+      "name": "新用戶歡迎優惠",
+      "priority": 100,
+      "type": "CODE"
+    },
     "discount": {
-      "discountType": "FIXED_AMOUNT",
-      "discountValue": 100,
-      "currency": "TWD"
+      "type": "FIXED_AMOUNT",
+      "value": 100,
+      "currency": "TWD",
+      "maxCycles": 1
     },
     "validPeriod": {
-      "startDate": "2024-01-01T00:00:00Z",
-      "endDate": "2024-12-31T23:59:59Z"
+      "startAt": "2025-01-01T00:00:00Z",
+      "endAt": "2025-12-31T23:59:59Z"
     },
-    "usageInfo": {
-      "remainingUses": 1,
-      "canUse": true
+    "usage": {
+      "remainingForCustomer": 1,
+      "globalRemaining": null
     }
   }
 }
@@ -446,9 +451,41 @@ Authorization: Bearer <token>
 #### 2.3.2 查詢可用優惠
 
 ```http
-GET /api/v1/promotions/available?productId=64f5c8e5a1b2c3d4e5f67890&planId=64f5c8e5a1b2c3d4e5f67891
+GET /api/v1/promotions/available?productId=64f5c8e5a1b2c3d4e5f67890&planId=64f5c8e5a1b2c3d4e5f67891&includeIneligible=false
 Authorization: Bearer <token>
 ```
+
+**回應**：
+```json
+{
+  "traceId": "trace_abcdef0123456789",
+  "code": 200,
+  "message": "Success",
+  "result": {
+    "promotions": [
+      {
+        "isValid": true,
+        "reasons": [],
+        "promotion": {
+          "id": "prom_anniv",
+          "code": null,
+          "name": "周年慶",
+          "priority": 90,
+          "type": "CAMPAIGN"
+        },
+        "discount": { "type": "PERCENTAGE", "value": 20, "maxCycles": 1 },
+        "validPeriod": {
+          "startAt": "2025-09-01T00:00:00Z",
+          "endAt": "2025-09-30T23:59:59Z"
+        },
+        "usage": { "remainingForCustomer": 1, "globalRemaining": null }
+      }
+    ]
+  }
+}
+```
+
+排序與選擇規則：priority desc → 節省金額 desc → ID 升冪（穩定）。
 
 ### 2.4 支付管理 API
 
@@ -681,6 +718,21 @@ export const ERROR_CODES = {
   PROMOTION_ALREADY_USED: {
     code: 4532,
     message: 'Promotion code has already been used',
+    httpStatus: 422
+  },
+  PROMOTION_EXPIRED: {
+    code: 4533,
+    message: 'Promotion has expired',
+    httpStatus: 422
+  },
+  PROMOTION_NOT_ELIGIBLE: {
+    code: 4534,
+    message: 'Promotion not eligible for this customer',
+    httpStatus: 422
+  },
+  PROMOTION_NOT_APPLICABLE_TO_PLAN: {
+    code: 4535,
+    message: 'Promotion not applicable to this plan',
     httpStatus: 422
   }
 } as const;

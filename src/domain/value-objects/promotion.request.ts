@@ -1,9 +1,14 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 export class ValidatePromotionRequest {
   @IsString()
-  @IsNotEmpty()
-  code: string;
+  @IsOptional()
+  // Deprecated: use promotionCode
+  code?: string;
+
+  @IsString()
+  @IsOptional()
+  promotionCode?: string;
 
   @IsString()
   @IsOptional()

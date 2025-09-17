@@ -391,9 +391,231 @@ interface BillingPlanDocument {
 { effectiveDate: 1, expirationDate: 1 }
 ```
 
-### 3.8 Roadmap：promotions、refunds
-- 文件中原有設計，現階段未落地於程式碼
-- 保留作為後續擴展之參考與規格草案
+### 3.8 Promotions（優惠）資料模型（Phase 2 設計整合）
+
+原先標示為 Roadmap，現更新為正式設計目標。以下集合支援：查詢可用優惠、資格驗證、使用次數限制、套用紀錄、審計與併發安全。
+
+#### 3.8.1 promotions
+主優惠定義。建議保持精簡（少量百級），適合常駐快取。
+```typescript
+interface PromotionDocument {
+  _id: ObjectId;
+  code?: string | null;                  // type=CODE 時存在且唯一
+  name: string;
+  type: 'CODE' | 'CAMPAIGN' | 'INTRO' | 'TIERED' | 'THRESHOLD';
+  priority: number;                      // 排序用（高→低）
+  status: 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'EXPIRED';
+  scope: { productIds?: string[]; planIds?: string[] }; // 為空 = 全域
+  discount: {
+    type: 'FIXED_AMOUNT' | 'PERCENTAGE' | 'FREE_CYCLES' | 'TIERED' | 'THRESHOLD_BONUS';
+    value?: number;                      // FIXED/PERCENTAGE 基本值
+    currency?: string;                   // FIXED_AMOUNT 幣別（預設 TWD）
+    maxCycles?: number;                  // FREE_CYCLES 或 限期折扣週期
+    tiers?: { threshold: number; value: number }[]; // TIERED 分段百分比或金額值（依規格）
+    thresholdRules?: { min: number; bonusType: 'AMOUNT' | 'PERCENTAGE'; value: number }[]; // THRESHOLD_BONUS
+  };
+  period: { startAt: Date; endAt: Date };
+  eligibility?: {
+    newCustomerOnly?: boolean;
+    minOrderAmount?: number;             // 以最小幣值（分）
+    regions?: string[];                  // ISO Country Codes
+    customerSegments?: string[];         // 行銷分群
+  };
+  usageLimits?: { globalLimit?: number; perCustomerLimit?: number };
+  usageCounters?: { globalUsed: number }; // 實時計數（避免昂貴聚合）
+  stacking?: { exclusive: boolean };      // 預設 true（不可疊加）
+  metadata?: Record<string, any>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+索引（Mongo Shell / Migration Script 擬）：
+```javascript
+// 啟用碼唯一（僅非草稿）
+db.promotions.createIndex(
+  { code: 1 },
+  { unique: true, partialFilterExpression: { code: { $type: 'string' }, status: { $ne: 'DRAFT' } } }
+);
+// 期間 + 狀態 + 優先級（查可用 / 排序）
+db.promotions.createIndex({ status: 1, 'period.startAt': 1, 'period.endAt': 1, priority: -1 });
+// 產品/方案篩選
+db.promotions.createIndex({ status: 1, 'scope.productIds': 1 });
+db.promotions.createIndex({ status: 1, 'scope.planIds': 1 });
+// 過期清理或批次排程（過期掃描）
+db.promotions.createIndex({ 'period.endAt': 1, status: 1 });
+```
+
+#### 查詢模式
+1. 列出「現在有效」優惠：
+```javascript
+const now = new Date();
+db.promotions.find({
+  status: 'ACTIVE',
+  'period.startAt': { $lte: now },
+  'period.endAt': { $gt: now },
+  $and: [
+    { $or: [ { 'scope.productIds': { $exists: false } }, { 'scope.productIds': productId }, { 'scope.productIds': { $size: 0 } } ] },
+    { $or: [ { 'scope.planIds': { $exists: false } }, { 'scope.planIds': planId }, { 'scope.planIds': { $size: 0 } } ] }
+  ]
+}).sort({ priority: -1, _id: 1 });
+```
+2. 即將到期預警（營運用）：
+```javascript
+db.promotions.find({ status: 'ACTIVE', 'period.endAt': { $lte: new Date(Date.now() + 3*24*60*60*1000) } });
+```
+
+#### 3.8.2 promotion_usages
+每（promotion, customer）使用統計，避免 promotions 自身膨脹。
+```typescript
+interface PromotionUsageDocument {
+  _id: ObjectId;
+  promotionId: ObjectId;
+  customerId: ObjectId;
+  timesUsed: number;         // 已套用次數（計消耗）
+  cyclesGranted?: number;    // FREE_CYCLES 或 multi-cycle 折扣授予總數
+  cyclesConsumed?: number;   // 已消耗週期數
+  lastAppliedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+索引：
+```javascript
+db.promotion_usages.createIndex({ promotionId: 1, customerId: 1 }, { unique: true });
+db.promotion_usages.createIndex({ customerId: 1, promotionId: 1, lastAppliedAt: -1 });
+```
+原子增量（套用時）：
+```javascript
+// 判斷未超過 perCustomerLimit（若存在）
+db.promotion_usages.findOneAndUpdate(
+  { promotionId, customerId, $expr: { $lt: [ '$timesUsed', perCustomerLimit ?? Number.MAX_SAFE_INTEGER ] } },
+  { $inc: { timesUsed: 1 }, $set: { lastAppliedAt: new Date(), updatedAt: new Date() }, $setOnInsert: { createdAt: new Date(), cyclesGranted: maxCycles ?? 0, cyclesConsumed: 0 } },
+  { upsert: true, returnDocument: 'after' }
+);
+```
+
+#### 3.8.3 promotion_applications
+實際套用紀錄（審計 / 報表 / Idempotency）。
+```typescript
+interface PromotionApplicationDocument {
+  _id: ObjectId;
+  promotionId: ObjectId;
+  subscriptionId: ObjectId;
+  customerId: ObjectId;
+  code?: string | null;
+  appliedAt: Date;
+  cycleNumber: number; // 0 = 初始建立時
+  pricingSnapshot: {
+    baseAmount: number;
+    discountAmount: number;
+    finalAmount: number;
+    currency: string;
+  };
+  discountType: string;
+  savings: number;          // 與 discountAmount 一致，保留冗餘利於聚合
+  freeCycleApplied?: boolean;
+  idempotencyKey: string;   // 外部傳入或 Engine 生成
+  metadata?: Record<string, any>;
+}
+```
+索引：
+```javascript
+db.promotion_applications.createIndex({ idempotencyKey: 1 }, { unique: true });
+db.promotion_applications.createIndex({ subscriptionId: 1, cycleNumber: 1 });
+db.promotion_applications.createIndex({ promotionId: 1, appliedAt: -1 });
+db.promotion_applications.createIndex({ customerId: 1, appliedAt: -1 });
+```
+報表聚合範例：
+```javascript
+db.promotion_applications.aggregate([
+  { $match: { appliedAt: { $gte: ISODate('2025-01-01') } } },
+  { $group: { _id: '$promotionId', usageCount: { $sum: 1 }, totalSavings: { $sum: '$savings' } } },
+  { $sort: { totalSavings: -1 } }
+]);
+```
+
+#### 3.8.4 promotion_audit_logs
+狀態/內容變更審計。
+```typescript
+interface PromotionAuditLogDocument {
+  _id: ObjectId;
+  promotionId: ObjectId;
+  action: 'CREATED' | 'UPDATED' | 'STATUS_CHANGE' | 'FORCE_EXPIRE' | 'USAGE_ADJUST';
+  before?: any;   // 差異（裁剪）
+  after?: any;
+  operator: { type: 'SYSTEM' | 'USER'; id?: string };
+  createdAt: Date;
+}
+```
+索引：
+```javascript
+db.promotion_audit_logs.createIndex({ promotionId: 1, createdAt: -1 });
+db.promotion_audit_logs.createIndex({ action: 1, createdAt: -1 });
+```
+
+#### 3.8.5 Idempotency Key 策略
+可選兩種：
+1) 直接存在 promotion_applications.idempotencyKey（建議，已索引）
+2) 獨立集合 promotion_application_keys：
+```typescript
+{ _id: ObjectId, key: string, subscriptionId: ObjectId, promotionId: ObjectId, createdAt: Date }
+```
+索引：
+```javascript
+// 若採獨立集合
+// db.promotion_application_keys.createIndex({ key: 1 }, { unique: true });
+// TTL（例如 90 天）
+// db.promotion_application_keys.createIndex({ createdAt: 1 }, { expireAfterSeconds: 90*24*3600 });
+```
+建議：Phase 2 先採內嵌（簡化交易），未來視成長再抽離。
+
+#### 3.8.6 交易流程（套用優惠）參考
+```text
+Start Session / Transaction
+ 1. promotions.findOneAndUpdate({_id, status:'ACTIVE', period.startAt <= now < period.endAt, (globalLimit 未達)})
+    若 globalLimit 存在：使用 $expr 比較 usageCounters.globalUsed < usageLimits.globalLimit 並 $inc globalUsed:1
+ 2. promotion_usages.findOneAndUpdate({ promotionId, customerId, timesUsed < perCustomerLimit }) $inc timesUsed
+ 3. 計算折扣（Calculator）→ 建構 pricingSnapshot
+ 4. 寫入 promotion_applications（含 idempotencyKey）
+Commit
+```
+降級模式（無 ReplicaSet）：移除跨集合交易，順序保持 1 → 2 → 4，若 3 失敗需補償（排程對齊 usage 計數）。
+
+#### 3.8.7 併發與一致性風險對策
+| 風險 | 描述 | 對策 |
+|------|------|------|
+| globalLimit 競爭 | 高併發下超配 | 單條件 findOneAndUpdate + $expr + $inc；失敗回傳重試/回滾 |
+| perCustomerLimit 超限 | 重複快速請求 | usage upsert 條件加 timesUsed < limit |
+| 重複提交 | 客戶重複點擊 | idempotencyKey 索引唯一，第二次直接查回結果 |
+| 過期邊界 | 跨過 endAt 時刻 | 查詢條件使用 now 並在交易內再驗證 |
+| 疊加繞過 | 並行嘗試多碼 | Engine 先排序後僅 apply 第一個；其餘忽略 |
+
+#### 3.8.8 快取策略
+| Key | 內容 | TTL | 失效事件 |
+|-----|------|-----|----------|
+| promotions:active:{productId}:{planId} | 過濾後 ACTIVE 清單(序列化簡版) | 60s | promotion 狀態/期間更新、範圍變更 |
+| promotion:{id} | 單筆詳情 | 300s | 更新/狀態變更 |
+
+清理：狀態改 PAUSED/EXPIRED 時廣播失效事件（Publish-Subscribe）。
+
+#### 3.8.9 指標（Metrics）建議
+- promotion_validate_latency_ms (histogram)
+- promotion_list_cache_hit_ratio (gauge / counter)
+- promotion_apply_success_total / failed_total
+- promotion_apply_contention_retries_total
+- promotion_global_limit_exhausted_total
+
+#### 3.8.10 測試覆蓋要點
+- 正常套用（FIXED, PERCENTAGE, FREE_CYCLES）
+- globalLimit 精確截止（例如 5 次併發僅 5 成功）
+- perCustomerLimit 阻擋第 N+1 次
+- idempotency 重放
+- 過期與未開始期間拒絕
+- 排序與最佳選擇 deterministic（priority→savings→_id）
+- Free cycles 多週期消耗
+
+### 3.9 Refunds（仍為 Roadmap）
+- 仍待後續設計：refunds 集合（申請/審批/狀態流轉），對應 payments.refundedAmount / refundedAt 回填。
 
 ## 4. 查詢模式與範例
 
@@ -537,4 +759,4 @@ class DataConsistencyChecker {
 
 ---
 
-本文已全面對齊現行程式碼的集合與欄位，並保留 promotions、refunds 為 Roadmap。後續若擴充至原文件之嵌入式設計，需伴隨資料遷移與查詢改寫評估。
+本文已全面對齊現行程式碼的集合與欄位，並保留 refunds 為 Roadmap。後續若擴充至原文件之嵌入式設計，需伴隨資料遷移與查詢改寫評估。
